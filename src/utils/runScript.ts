@@ -1,4 +1,4 @@
-import { NS } from "@ns";
+import { NS, Server } from "@ns";
 import { GB_FOR_HOME } from "./constants";
 
 interface RunScriptOptions {
@@ -24,19 +24,27 @@ export function scriptAllocator(ns: NS, scripts: RunScriptOptions[], serverHostn
   )
   const serversToRunOn = scripts.map(() => [] as { hostname: string, threads: number }[]) // array of servers to run each script on, with the number of threads to run on each server
   const scriptRams = scripts.map(s => ns.getScriptRam(s.script))
-  const servers = serverHostnames.map(h => ns.getServer(h))
-  for (const server of servers) {
-    let reservedRam = prevScriptAllocation.reduce((sum, schedule) => {
-      const scheduleForServer = schedule.servers.find(s => s.hostname === server.hostname) ?? { hostname: server.hostname, threads: 0 }
-      return sum + (scheduleForServer ? (scheduleForServer.threads * ns.getScriptRam(schedule.script)) : 0)
-    }, 0)
+  const servers = serverHostnames
+    .map(h => ns.getServer(h))
+    .map(server => ({
+      server, prevReservedRam: prevScriptAllocation.reduce((sum, schedule) => {
+        const scheduleForServer = schedule.servers.find(s => s.hostname === server.hostname) ?? { hostname: server.hostname, threads: 0 }
+        return sum + (scheduleForServer ? (scheduleForServer.threads * ns.getScriptRam(schedule.script)) : 0)
+      }, 0)
+    }))
+    .sort((a, b) => (
+      (a.server.maxRam - a.prevReservedRam - a.server.ramUsed - ramReservation(a.server)) -
+      (b.server.maxRam - b.prevReservedRam - b.server.ramUsed - ramReservation(b.server))))
+  // sort servers by RAM available ascending to try to fit scripts on bigger servers first
+  for (const { server, prevReservedRam } of servers) {
+    let reservedRam = prevReservedRam
     for (let i = 0; i < scripts.length; i++) {
       const remainingThreadsToSchedule = scripts[i].threads - serversToRunOn[i].reduce((sum, s) => sum + s.threads, 0)
       if (remainingThreadsToSchedule <= 0) {
         // This script is already fully scheduled, skip to the next one
         continue
       }
-      const availableRam = server.maxRam - server.ramUsed - reservedRam - (server.hostname === "home" ? GB_FOR_HOME : 0) // leave some ram on home for other scripts
+      const availableRam = server.maxRam - server.ramUsed - reservedRam - ramReservation(server) // leave some ram on home for other scripts
       if (scripts[i].allowPartial) {
         const maxThreadsForScript = Math.floor(availableRam * (scripts[i].useCores ? coresFormula(server.cpuCores) : 1) / scriptRams[i])
         if (maxThreadsForScript > 0) {
@@ -54,6 +62,10 @@ export function scriptAllocator(ns: NS, scripts: RunScriptOptions[], serverHostn
     ...script,
     servers: serversToRunOn[i],
   }))
+}
+
+function ramReservation(server: Server): number {
+  return (server.hostname === "home" ? GB_FOR_HOME : 0)
 }
 
 export function canRunScripts(scripts: ScriptAllocation[]): boolean {
