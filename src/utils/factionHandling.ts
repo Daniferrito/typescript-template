@@ -36,11 +36,13 @@ export async function joinFactions(ns: NS): Promise<boolean> {
 function hasRemainingAugmentations(ns: NS, faction: string): boolean {
   const augmentations = ns.singularity.getAugmentationsFromFaction(faction)
   const ownedAugmentations = ns.singularity.getOwnedAugmentations(true)
-  return augmentations.some(a => !ownedAugmentations.includes(a) || otherJoinedFactionHasAugmentation(ns, a))
+  const unownedAugmentations = augmentations.filter(a => !ownedAugmentations.includes(a))
+  const otherFactionAugmentations = unownedAugmentations.filter(a => otherJoinedFactionHasAugmentation(ns, a, faction))
+  return unownedAugmentations.length > 0 && otherFactionAugmentations.length < unownedAugmentations.length
 }
 
-function otherJoinedFactionHasAugmentation(ns: NS, augmentation: string): boolean {
+function otherJoinedFactionHasAugmentation(ns: NS, augmentation: string, faction: string): boolean {
   const factions = ns.singularity.getAugmentationFactions(augmentation)
   const player = ns.getPlayer()
-  return factions.some(f => player.factions.includes(f))
+  return factions.some(f => f !== faction && player.factions.includes(f))
 }
