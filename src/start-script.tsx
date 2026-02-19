@@ -33,7 +33,9 @@ export async function main(_ns: NS): Promise<void> {
   ns.ui.moveTail(550, 800)
   await ns.asleep(100) // wait for scan-all to finish and write the files
 
-  await multiHack(ns)
+  for (; ;) {
+    await multiHack(ns)
+  }
 }
 
 async function startupScripts(ns: NS): Promise<void> {
@@ -73,6 +75,7 @@ interface Timer {
   output: HackServerOutput
   timeStarted: number
   timeFinishes: number
+  timeStartsFinishing: number
 }
 const timers: Timer[] = []
 
@@ -94,6 +97,7 @@ async function multiHack(ns: NS, fixedTargets?: string[]): Promise<never> {
             hostname: target,
             timeStarted: now,
             timeFinishes: now + output.totalTime,
+            timeStartsFinishing: now + output.firstFinishTime,
             output,
           })
           couldStartBatch = true
@@ -115,7 +119,7 @@ async function multiHack(ns: NS, fixedTargets?: string[]): Promise<never> {
 
 async function waitForNextTimer(ns: NS, timers: Timer[]): Promise<void> {
   const nextTimer = timers.reduce((prev, curr) => prev.timeFinishes < curr.timeFinishes ? prev : curr)
-  const timeToWait = nextTimer.timeFinishes - Date.now()
+  const timeToWait = Math.min(5 * 1000, nextTimer.timeFinishes - Date.now())
   if (timeToWait > 0) {
     await ns.asleep(timeToWait + waitTimeMs)
   }
@@ -153,7 +157,7 @@ function TimerComponent() {
               <td>{ns.tFormat(timer.timeFinishes - now)}</td>
               <td>{`${ns.formatNumber(timer.output.efficiency, 0).padStart(4, ' ')}$/th/s`}</td>
             </tr>
-            <tr key={`${timer.hostname}-progress`}><td colSpan={3}><ProgressBar progress={(now - timer.timeStarted) / (timer.timeFinishes - timer.timeStarted)} /></td></tr>
+            <tr key={`${timer.hostname}-progress`}><td colSpan={3}><DoubleProgressBar progress1={(now - timer.timeStarted) / (timer.timeFinishes - timer.timeStarted)} progress2={(now - timer.timeStarted) / (timer.timeStartsFinishing - timer.timeStarted)} /></td></tr>
           </>
         ))}
       </tbody>
@@ -181,6 +185,40 @@ function ProgressBar({ progress }: { progress: number }): React.ReactElement {
           top: 0,
           transform: `translateX(${-100 + progress * 100}%)`,
           backgroundColor: "rgb(173, 255, 47)",
+          position: "absolute",
+        }} />
+    </span >)
+}
+
+// progress1 marsk the right of the bar, and progress2 marks the left
+// so if progress1 is 0.8 and progress2 is 0.5, the bar will be from 50% to 80%
+function DoubleProgressBar({ progress1, progress2 }: { progress1: number, progress2: number }): React.ReactElement {
+  return (
+    <span
+      style={{
+        overflow: "hidden",
+        display: "block",
+        height: "4px",
+        position: "relative",
+        backgroundColor: "rgb(17,17,17)"
+      }}
+      role="progressbar" aria-valuenow={(progress2) * 100} aria-valuemin={0} aria-valuemax={100}>
+      <span
+        style={{
+          width: `${(progress1) * 100}%`,
+          left: 0,
+          bottom: 0,
+          top: 0,
+          backgroundColor: "rgb(173, 255, 47)",
+          position: "absolute",
+        }} />
+      <span
+        style={{
+          width: `${(progress2 - progress1) * 100}%`,
+          left: `${progress1 * 100}%`,
+          bottom: 0,
+          top: 0,
+          backgroundColor: "rgb(255, 0, 0)",
           position: "absolute",
         }} />
     </span >)

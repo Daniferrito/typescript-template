@@ -18,6 +18,7 @@ interface HackPrevRunData {
 
 export interface HackServerOutput {
   totalTime: number
+  firstFinishTime: number
   totalHackedMoney: number
   prepared: "partial" | "full" | "already"
   threadEfficiency: number
@@ -40,6 +41,7 @@ function hackServer(ns: NS, target: string, servers: string[], targetPercentage 
     ns.print(`Server ${target} has no money, skipping...`)
     return {
       totalTime: 0,
+      firstFinishTime: 0,
       totalHackedMoney: 0,
       prepared: "already",
       threadEfficiency: 0,
@@ -94,6 +96,7 @@ function hackServer(ns: NS, target: string, servers: string[], targetPercentage 
       ns.print(`SUCCESS: Launched ${String(totalBatches).padStart(6, ' ')} batches (${String(totalThreads).padStart(8, ' ')} threads) on ${target.padStart(18, ' ')} of ${String(threadsFirstBatch[0]).padStart(3, ' ')}, ${String(threadsFirstBatch[1]).padStart(3, ' ')}, ${String(threadsFirstBatch[2]).padStart(3, ' ')}, ${String(threadsFirstBatch[3]).padStart(3, ' ')}, ${ns.tFormat(prevTime).padStart(21, ' ')}, ${ns.formatNumber(totalHackedMoney, 0).padStart(4, ' ')}$. Eff: ${ns.formatNumber(threadEfficiency, 0).padStart(4, ' ')} $/th, ${ns.formatNumber(timeEfficiency, 0).padStart(4, ' ')} $/s., ${ns.formatNumber(efficiency, 0).padStart(4, ' ')} $/th/s.`)
       return {
         totalTime: prevRunData?.totalTime ?? prepareOutput?.totalTime ?? 0,
+        firstFinishTime: prevRunData?.firstFinishTime ?? prepareOutput?.firstFinishTime ?? 0,
         totalHackedMoney,
         threadEfficiency,
         timeEfficiency,
@@ -103,6 +106,7 @@ function hackServer(ns: NS, target: string, servers: string[], targetPercentage 
     }
     return {
       totalTime: prevRunData?.totalTime ?? prepareOutput?.totalTime ?? 0,
+      firstFinishTime: prevRunData?.firstFinishTime ?? prepareOutput?.firstFinishTime ?? 0,
       totalHackedMoney: prevRunData?.totalHackedMoney ?? 0,
       threadEfficiency: 0,
       timeEfficiency: 0,
