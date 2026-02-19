@@ -11,12 +11,15 @@ export async function upgradeJobs(ns: NS): Promise<void> {
     const options = ns.singularity.getCompanyPositions(companyName).map(position => ns.singularity.getCompanyPositionInfo(companyName, position))
     const currentPosition = ns.singularity.getCompanyPositionInfo(companyName, job)
     const currentReputation = ns.singularity.getCompanyRep(companyName)
+    const currentGains = ns.formulas.work.companyGains(player, companyName, currentPosition.name, 0)
     let bestOption = currentPosition
     for (const option of options) {
+      const optionGains = ns.formulas.work.companyGains(player, companyName, option.name, 0)
       if (
         option.requiredReputation <= currentReputation &&
         hasNecessarySkills(player, option.requiredSkills) &&
-        ns.formulas.work.companyGains(player, companyName, option.name, 0) > ns.formulas.work.companyGains(player, companyName, bestOption.name, 0)
+        (optionGains.reputation > currentGains.reputation ||
+          (optionGains.reputation === currentGains.reputation && optionGains.money > currentGains.money))
       ) {
         bestOption = option
       }
