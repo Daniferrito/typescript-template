@@ -7,7 +7,7 @@ interface HackPrevRunData {
   totalTime: number
   firstFinishTime: number
   minWaitTime: number
-  prepared: "partial" | "full" | "already"
+  prepared: "partial" | "fullNoBatches" | "full" | "already"
   prepareThreadsUsed: [number, number, number] // weakThreads1, growThreads, weakThreads2
   batches: {
     amount: number
@@ -20,7 +20,7 @@ export interface HackServerOutput {
   totalTime: number
   firstFinishTime: number
   totalHackedMoney: number
-  prepared: "partial" | "full" | "already"
+  prepared: "partial" | "fullNoBatches" | "full" | "already"
   threadEfficiency: number
   timeEfficiency: number
   efficiency: number
@@ -101,7 +101,7 @@ function hackServer(ns: NS, target: string, servers: string[], targetPercentage 
         threadEfficiency,
         timeEfficiency,
         efficiency,
-        prepared: prevRunData?.prepared ?? (prepareOutput?.firstFinishTime === 0 ? "already" : (prepareOutput?.fullPrepare ? "full" : "partial"))
+        prepared: prevRunData?.prepared ?? (prepareOutput?.firstFinishTime === 0 ? "already" : (prepareOutput?.fullPrepare ? "fullNoBatches" : "partial"))
       }
     }
     return {
@@ -111,7 +111,7 @@ function hackServer(ns: NS, target: string, servers: string[], targetPercentage 
       threadEfficiency: 0,
       timeEfficiency: 0,
       efficiency: 0,
-      prepared: prevRunData?.prepared ?? (prepareOutput?.firstFinishTime === 0 ? "already" : (prepareOutput?.fullPrepare ? "full" : "partial"))
+      prepared: prevRunData?.prepared ?? (prepareOutput?.firstFinishTime === 0 ? "already" : (prepareOutput?.fullPrepare ? "fullNoBatches" : "partial"))
     }
   }
 
@@ -146,7 +146,7 @@ function hackServer(ns: NS, target: string, servers: string[], targetPercentage 
     totalTime,
     minWaitTime,
     firstFinishTime,
-    prepared: prevRunData?.prepared ?? (prepareOutput?.firstFinishTime === 0 ? "already" : (prepareOutput?.fullPrepare ? "full" : "partial")),
+    prepared: prevRunData?.prepared ?? (prepareOutput?.firstFinishTime === 0 ? "already" : (prepareOutput?.fullPrepare ? (batchesLaunched === 0 ? "fullNoBatches" : "full") : "partial")),
     prepareThreadsUsed: prepareOutput ? prepareOutput.threadsUsed : prevRunData?.prepareThreadsUsed ?? [0, 0, 0],
     batches: [...(prevRunData?.batches ?? []), { amount: batchesLaunched, threadsUsed: [hackThreads, weakThreads1, growThreads, weakThreads2] }],
     totalHackedMoney: hackedMoney * batchesLaunched + (prevRunData?.totalHackedMoney ?? 0)
