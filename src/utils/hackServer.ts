@@ -1,9 +1,10 @@
 import { NS } from "@ns";
-import { runMultipleScripts } from "./runScript";
+import { AllocatorOutput, allScriptsAllocated, emptyAllocatorOutput, mergeAllocations, runAllocatedScripts, scriptAllocator } from "./runScript";
 import { GROW_SCRIPT, HACK_SCRIPT, targetMoneyToHackPercentage, waitTimeMs, WEAK_SCRIPT } from "./constants";
 import prepareServer, { PrepareServerOutput } from "./prepareServer";
 
 interface HackPrevRunData {
+  allocations: AllocatorOutput
   totalTime: number
   firstFinishTime: number
   minWaitTime: number
@@ -80,7 +81,11 @@ function hackServer(ns: NS, target: string, servers: string[], targetPercentage 
   const prevFirstFinishTime = prepareOutput?.firstFinishTime ?? prevRunData?.firstFinishTime ?? 0
 
 
-  if (!(prevRunData || prepareOutput?.fullPrepare) || (prevTime > 0 && !hasFormulas) || hackThreads <= 0 || remainingRetries <= 0) {
+  if (((prepareOutput?.totalTime ?? 0) > 0 && !hasFormulas) || hackThreads <= 0 || remainingRetries <= 0) {
+    runAllocatedScripts(ns,
+      prevRunData ? prevRunData.allocations : prepareOutput?.allocations ?? emptyAllocatorOutput(ns, servers),
+    )
+
     const totalThreads = prevRunData?.batches.reduce((sum, b) => sum + b.amount * b.threadsUsed.reduce((a, b) => a + b, 0), 0) ?? 0
     const totalBatches = prevRunData?.batches.reduce((sum, b) => sum + b.amount, 0) ?? 0
     const threadsFirstBatch = prevRunData?.batches[0]?.threadsUsed ?? [0, 0, 0, 0]
@@ -104,6 +109,7 @@ function hackServer(ns: NS, target: string, servers: string[], targetPercentage 
         prepared: prevRunData?.prepared ?? (prepareOutput?.firstFinishTime === 0 ? "already" : (prepareOutput?.fullPrepare ? "fullNoBatches" : "partial"))
       }
     }
+    ns.print(`SUCCESS: Prepared server ${target} ${prevRunData ? "partially again" : (prepareOutput?.fullPrepare ? "fully" : "partially")}, but couldn't launch any batches${!hasFormulas ? " because Formulas.exe is missing" : ""}. Will retry${remainingRetries > 1 ? ` ${remainingRetries - 1} more times` : ""}...`)
     return {
       totalTime: prevRunData?.totalTime ?? prepareOutput?.totalTime ?? 0,
       firstFinishTime: prevRunData?.firstFinishTime ?? prepareOutput?.firstFinishTime ?? 0,
@@ -127,22 +133,28 @@ function hackServer(ns: NS, target: string, servers: string[], targetPercentage 
   let extraWaitTime = 0
   let batchesLaunched = 0
 
-  while (extraWaitTime + minWaitTime < firstFinishTime) {
-    const lastBatchWasLaunched = runMultipleScripts(ns, [
+  const allocations = prevRunData ? prevRunData.allocations : prepareOutput?.allocations ?? emptyAllocatorOutput(ns, servers)
+
+  while (extraWaitTime + minWaitTime < firstFinishTime && allScriptsAllocated(allocations)) {
+
+    const newAllocations = scriptAllocator(ns, [
       { script: HACK_SCRIPT, threads: hackThreads, args: [target, hackWaitTime + extraWaitTime], useCores: false, allowPartial: false },
       { script: WEAK_SCRIPT, threads: weakThreads1, args: [target, weakWaitTime1 + extraWaitTime], useCores: true, allowPartial: true },
       { script: GROW_SCRIPT, threads: growThreads, args: [target, growWaitTime + extraWaitTime], useCores: true, allowPartial: false },
       { script: WEAK_SCRIPT, threads: weakThreads2, args: [target, weakWaitTime2 + extraWaitTime], useCores: true, allowPartial: true },
-    ], servers)
+    ], servers, allocations)
+    const lastBatchWasLaunched = allScriptsAllocated(newAllocations)
     if (!lastBatchWasLaunched) {
       break
     }
+    mergeAllocations(allocations, newAllocations)
     extraWaitTime += waitTimeMs * 4
     batchesLaunched++
   }
   const totalTime = batchesLaunched ? weakTime + weakWaitTime2 + extraWaitTime : prevTime
   const newTargetPercentage = targetPercentage * 0.5
   return hackServer(ns, target, servers, newTargetPercentage, remainingRetries - 1, {
+    allocations,
     totalTime,
     minWaitTime,
     firstFinishTime,

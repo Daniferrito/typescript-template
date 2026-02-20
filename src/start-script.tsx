@@ -24,17 +24,17 @@ export async function main(_ns: NS): Promise<void> {
 
   ns.ui.openTail()
   ns.ui.resizeTail(2000, 400)
+  ns.ui.moveTail(550, 820)
 
   const overviewExtraHook = document.getElementById('overview-extra-hook-0')
   if (overviewExtraHook && overviewExtraHook.parentElement) {
     (overviewExtraHook.parentElement as HTMLTableCellElement).colSpan = 2
   }
   ReactDOM.render(<TimerComponent />, overviewExtraHook);
-  ns.ui.moveTail(550, 800)
   await ns.asleep(100) // wait for scan-all to finish and write the files
 
   for (; ;) {
-    await multiHack(ns)
+    await multiHack(ns, ns.args[0] ? ns.args as string[] : undefined)
   }
 }
 
@@ -106,7 +106,7 @@ async function multiHack(ns: NS, fixedTargets?: string[]): Promise<never> {
       if (!couldStartBatch) {
         if (timers.length === 0) {
           ns.tprint("ERROR  : Couldn't start any batch, but no timers? This should never happen, something is wrong")
-          await ns.asleep(waitTimeMs)
+          await ns.asleep(5 * 1000)
         } else {
           await waitForNextTimer(ns, timers)
         }
