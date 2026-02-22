@@ -144,11 +144,11 @@ export function scriptsFitOnServers(ns: NS, scripts: AllocatorOutput): boolean {
 }
 
 export function runAllocatedScripts(ns: NS, scriptAllocations: AllocatorOutput): void {
-  if (!allScriptsAllocated(scriptAllocations)) {
-    ns.tprint(`${RED}Cannot run scripts, not enough resources (${scriptAllocations.allocations.map(a => a.script).join(", ")})${RESET}`)
-  }
+  // if (!allScriptsAllocated(scriptAllocations)) {
+  //   ns.tprint(`${RED}Cannot run scripts, not enough resources (${scriptAllocations.allocations.map(a => a.script).join(", ")})${RESET}`)
+  // }
   if (!scriptsFitOnServers(ns, scriptAllocations)) {
-    ns.tprint(`${RED}Cannot run scripts, allocated scripts do not fit on servers${RESET}`)
+    ns.tprint(`${RED}Cannot run scripts, allocated scripts do not fit on servers ${scriptAllocations.allocations.map(a => a.script).join(", ")}${RESET}`)
   }
   for (const allocation of scriptAllocations.allocations) {
     for (const server of allocation.servers) {
@@ -184,11 +184,8 @@ export function runSomewhereUnique(ns: NS, scriptName: string, serverHostnames: 
   if (isRunningSomewhere) {
     return
   }
-  const allocation = scriptAllocator(ns, [{ script: scriptName, args: [], threads: 1 }], serverHostnames)
+  const allocation = scriptAllocator(ns, [{ script: scriptName, args: [], threads: 1, useCores: false, allowPartial: false, temporary: false }], serverHostnames)
   if (allocation.allocations.length > 0 && allocation.allocations[0].servers.length > 0) {
-    for (const server of allocation.allocations[0].servers) {
-      ns.scp(scriptName, server.hostname, "home")
-    }
     runAllocatedScripts(ns, allocation)
   } else {
     ns.print(`WARNING: Failed to run script ${scriptName} (${ns.getScriptRam(scriptName)} RAM) somewhere unique, not enough resources`)

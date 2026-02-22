@@ -3,20 +3,21 @@ import { hasRemainingAugmentations } from "./utils/factionHandling";
 import { CityName, CompanyName, UniversityClassType, UniversityLocationName } from "./utils/enums";
 
 export async function main(ns: NS): Promise<void> {
+  const hasFormulas = ns.fileExists("Formulas.exe", "home")
 
   let isFirstTime = true
   for (; ;) {
     if (isFirstTime) {
       isFirstTime = false
     } else {
-      await ns.sleep(10 * 1000)
+      await ns.sleep(2 * 60 * 1000)
     }
     const player = ns.getPlayer()
     // If we have any faction work where we need reputation for unlocking new augmentations, do that first
     const factions = player.factions
     const faction = factions.find(f => hasRemainingAugmentations(ns, f))
     if (faction) {
-      const factionWorkTypes = ns.singularity.getFactionWorkTypes(faction).map(wt => ({ workType: wt, repGain: ns.formulas.work.factionGains(player, wt, 1).reputation })).sort((a, b) => b.repGain - a.repGain)
+      const factionWorkTypes = ns.singularity.getFactionWorkTypes(faction).map(wt => ({ workType: wt, repGain: hasFormulas ? ns.formulas.work.factionGains(player, wt, 1).reputation : 0 })).sort((a, b) => b.repGain - a.repGain)
       ns.singularity.workForFaction(faction, factionWorkTypes[0].workType)
       continue
     }

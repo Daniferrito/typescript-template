@@ -38,6 +38,7 @@ export async function main(_ns: NS): Promise<void> {
 
 async function startupScripts(ns: NS): Promise<void> {
   const servers = scanServers(ns).hackedServers
+  copyEverythingEverywhere(ns, servers)
   runSomewhereUnique(ns, "upgrade-things.js", servers)
   runSomewhereUnique(ns, "solve-coding-contracts.js", servers)
   runSomewhereUnique(ns, "hacknet-improve.js", servers)
@@ -142,7 +143,7 @@ function TimerComponent() {
           <>
             <tr key={timer.hostname} style={{
               textAlign: "end",
-              color: timer.output.prepared === "full" ? "rgb(204, 204, 0)" : (timer.output.prepared === "partial" ? "rgb(255, 0, 0)" : "rgb(0, 204, 0)")
+              color: preparedTypeToColor(timer.output.prepared)
             }}>
               <td style={{ textAlign: "start" }}>{timer.hostname}</td>
               <td>{ns.tFormat(timer.timeFinishes - now)}</td>
@@ -155,6 +156,23 @@ function TimerComponent() {
     </table>
     // </th>
   )
+}
+
+function preparedTypeToColor(preparedType: string): string {
+  switch (preparedType) {
+    case "full":
+      return "rgb(204, 204, 0)"
+    case "partial":
+      return "rgb(255, 0, 0)"
+    case "already":
+      return "rgb(0, 204, 0)"
+    case "fullNoBatches":
+      return "rgb(204, 102, 0)"
+    case "no":
+      return "rgb(102, 102, 102)"
+    default:
+      return "rgb(255, 255, 255)"
+  }
 }
 
 // progress1 marsk the right of the bar, and progress2 marks the left
@@ -189,4 +207,11 @@ function DoubleProgressBar({ progress1, progress2 }: { progress1: number, progre
           position: "absolute",
         }} />
     </span >)
+}
+
+function copyEverythingEverywhere(ns: NS, servers: string[]) {
+  const everything = ns.ls("home").filter(file => file.endsWith(".js"))
+  for (const server of servers) {
+    ns.scp(everything, server, "home")
+  }
 }

@@ -90,7 +90,7 @@ function hackServer(ns: NS, target: string, servers: string[], targetPercentage 
 
     const totalThreads = prevRunData?.batches.reduce((sum, b) => sum + b.amount * b.threadsUsed.reduce((a, b) => a + b, 0), 0) ?? 0
     const totalBatches = prevRunData?.batches.reduce((sum, b) => sum + b.amount, 0) ?? 0
-    const threadsFirstBatch = prevRunData?.batches[0]?.threadsUsed ?? [0, 0, 0, 0]
+    const threadsFirstBatch = prevRunData?.batches.find(b => b.threadsUsed[0] > 0)?.threadsUsed ?? [0, 0, 0, 0]
     // const totalThreads = (hackThreads + weakThreads1 + growThreads + weakThreads2) * batchesLaunched + prepareThreadsUsed.reduce((a, b) => a + b, 0)
     const totalHackedMoney = prevRunData?.totalHackedMoney ?? 0
     if (!(prevTime === 0 || totalThreads === 0 || totalHackedMoney === 0)) {

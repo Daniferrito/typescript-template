@@ -19,7 +19,7 @@ export function buyOrUpgradeServers(ns: NS): boolean {
       if (ns.getServerMaxRam(server) >= ram) {
         break
       }
-      if (ns.getPurchasedServerCost(ram) < ns.getServerMoneyAvailable("home") * 0.05) {
+      if (ns.getPurchasedServerCost(ram) < ns.getServerMoneyAvailable("home") * (ram > 2 ** 6 ? 0.05 : 1)) {
         ns.upgradePurchasedServer(server, ram)
         hadChanges = true;
         continue
