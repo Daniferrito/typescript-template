@@ -30,7 +30,7 @@ export async function upgradeJobs(ns: NS): Promise<void> {
   })
 }
 
-function hasNecessarySkills(player: Player, requiredSkills: Skills): boolean {
+export function hasNecessarySkills(player: Player, requiredSkills: Skills): boolean {
   for (const skill in requiredSkills) {
     const requiredLevel = requiredSkills[skill as keyof Skills] ?? 0
     if (player.skills[skill as keyof Skills] < requiredLevel) {

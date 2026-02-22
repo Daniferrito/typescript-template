@@ -43,6 +43,9 @@ async function startupScripts(ns: NS): Promise<void> {
   ns.exec("solve-coding-contracts.js", "home", {
     preventDuplicates: true,
   })
+  ns.exec("hacknet-improve.js", "home", {
+    preventDuplicates: true,
+  })
   const homeServer = ns.getServer("home")
   if (homeServer.maxRam >= 2 ** 8) {
     const ramToUse = homeServer.maxRam * 0.05
