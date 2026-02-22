@@ -63,9 +63,11 @@ async function backdoorFactionServers(ns: NS): Promise<void> {
 
 async function applyToCompanyFactions(ns: NS): Promise<void> {
   const invitations = ns.singularity.checkFactionInvitations()
+  const player = ns.getPlayer()
+  const joinedFactions = player.factions
   for (const faction in companyFactionCompanies) {
     const company = companyFactionCompanies[faction as keyof typeof companyFactionCompanies]
-    if (!invitations.includes(faction) && shouldJoinFaction(ns, faction)) {
+    if (!invitations.includes(faction) && !joinedFactions.includes(faction) && shouldJoinFaction(ns, faction)) {
       const jobNames = ns.singularity.getCompanyPositions(company)
       const jobs = jobNames
         .map(j => ns.singularity.getCompanyPositionInfo(company, j))
@@ -79,7 +81,7 @@ async function applyToCompanyFactions(ns: NS): Promise<void> {
   }
 }
 
-function hasRemainingAugmentations(ns: NS, faction: string): boolean {
+export function hasRemainingAugmentations(ns: NS, faction: string): boolean {
   const augmentations = ns.singularity.getAugmentationsFromFaction(faction)
   const ownedAugmentations = ns.singularity.getOwnedAugmentations(true)
   const unownedAugmentations = augmentations
@@ -89,6 +91,8 @@ function hasRemainingAugmentations(ns: NS, faction: string): boolean {
     .filter(a => !otherJoinedFactionHasAugmentation(ns, a, faction))
     // Filter out augmentations that have unowned prerequisites that we dont have, and that no other faction we are in has either, and that the faction itself doesnt have either, as we wont be able to get those for a long time if we join this faction now
     .filter(a => !augmentationHasUnownedPrerequisites(ns, a, faction))
+    // Filter out augmentations that we already have the rep for
+    .filter(a => ns.singularity.getAugmentationRepReq(a) > ns.singularity.getFactionRep(faction) && ns.singularity.getFactionFavor(faction) < 150)
   return unownedAugmentations.length > 0
 }
 

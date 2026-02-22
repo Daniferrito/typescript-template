@@ -35,7 +35,7 @@ function prepareServer(ns: NS, target: string, servers: string[]): PrepareServer
   const growTime = ns.getGrowTime(target)
 
   const moneyAvailable = server.moneyAvailable ?? 1
-  const weakThreads1 = Math.ceil((security - minSecurity) / 0.05)
+  let weakThreads1 = Math.ceil((security - minSecurity) / 0.05)
   server.hackDifficulty = minSecurity // simulate the effect of the first weaken
   const growthFactor = maxMoney / moneyAvailable
   let growThreads = hasFormulas ?
@@ -86,24 +86,33 @@ function prepareServer(ns: NS, target: string, servers: string[]): PrepareServer
           weakThreads2 = Math.ceil((2 * 0.002 * growThreads) / 0.05)
         }
       }
+    } else {
+      weakThreads1 = partialPrepareAllocations.allocations.filter(a => a.script === WEAK_SCRIPT).reduce((sum, a) => sum + a.servers.reduce((s, server) => s + server.threads, 0), 0)
+      growThreads = 0
+      weakThreads2 = 0
     }
 
-    const times = [
-      weakTime + weakWaitTime1,
-    ]
+    const times = [0]
+    if (weakThreads1 > 0) {
+      times.push(weakTime + weakWaitTime1)
+    }
     if (partialPrepareAllocations.allocations.some(a => a.script === GROW_SCRIPT && a.threads > 0)) {
       times.push(growTime + growWaitTime)
       times.push(weakTime + weakWaitTime2)
     }
 
     const totalTime = Math.max(...times)
+    if (totalTime === 0) {
+      // ns.print(`ERROR  : Could not allocate any threads to prepare server ${target}, skipping...`)
+      return { allocations: emptyAllocatorOutput(ns, servers), totalTime: 0, minWaitTime: 0, firstFinishTime: 0, fullPrepare: false, threadsUsed: [0, 0, 0] }
+    }
 
     ns.print(`WARN   : Preparing server ${target} ${RED}(partially)${RESET}, will take approximately ${ns.tFormat(totalTime)} (${weakThreads1 + growThreads + weakThreads2} threads). (${weakThreads1}, ${growThreads}, ${weakThreads2}) Originally wanted ${originalThreadsWanted.join(", ")} threads.`)
     ns.print(`WARN   : \tNeed to reduce ${ns.formatNumber(security - minSecurity)} security, and increase money by ${ns.formatPercent(growthFactor - 1)} (${ns.formatNumber(moneyAvailable)} to ${ns.formatNumber(maxMoney)}).`)
-    return { allocations: partialPrepareAllocations, totalTime: 0, minWaitTime: 0, firstFinishTime: 0, fullPrepare: false, threadsUsed: [partialPrepareAllocations.allocations[0].threads, growThreads, weakThreads2] }
+    return { allocations: partialPrepareAllocations, totalTime, minWaitTime, firstFinishTime, fullPrepare: false, threadsUsed: [partialPrepareAllocations.allocations[0].threads, growThreads, weakThreads2] }
   }
 
-  const totalTime = Math.max(weakTime + weakWaitTime1, growTime + growWaitTime, weakTime + weakWaitTime2)
+  const totalTime = weakTime + weakWaitTime2
 
   ns.print(`WARN   : Preparing server ${target}, will take approximately ${ns.tFormat(totalTime)} (${weakThreads1 + growThreads + weakThreads2} threads). (${weakThreads1}, ${growThreads}, ${weakThreads2})`)
   ns.print(`WARN   : \tNeed to reduce ${ns.formatNumber(security - minSecurity)} security, and increase money by ${ns.formatPercent(growthFactor - 1)} (${ns.formatNumber(moneyAvailable)} to ${ns.formatNumber(maxMoney)}).`)

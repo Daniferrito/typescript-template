@@ -8,7 +8,7 @@ interface HackPrevRunData {
   totalTime: number
   firstFinishTime: number
   minWaitTime: number
-  prepared: "partial" | "fullNoBatches" | "full" | "already"
+  prepared: "partial" | "fullNoBatches" | "full" | "already" | "no"
   prepareThreadsUsed: [number, number, number] // weakThreads1, growThreads, weakThreads2
   batches: {
     amount: number
@@ -21,7 +21,7 @@ export interface HackServerOutput {
   totalTime: number
   firstFinishTime: number
   totalHackedMoney: number
-  prepared: "partial" | "fullNoBatches" | "full" | "already"
+  prepared: "partial" | "fullNoBatches" | "full" | "already" | "no"
   threadEfficiency: number
   timeEfficiency: number
   efficiency: number
@@ -75,13 +75,15 @@ function hackServer(ns: NS, target: string, servers: string[], targetPercentage 
   const weakThreads2 = Math.ceil((2 * 0.002 * growThreads) / 0.05)
 
   const prepareOutput: PrepareServerOutput | undefined = prevRunData ? undefined : prepareServer(ns, target, servers)
+  const prepareType = prevRunData?.prepared ??
+    (prepareOutput?.fullPrepare ? (prepareOutput?.totalTime === 0 ? "already" : "fullNoBatches") : (prepareOutput?.totalTime === 0 ? "no" : "partial"))
 
   const prevTime = prevRunData?.totalTime ?? prepareOutput?.totalTime ?? 0
   const prevMinWaitTime = prevRunData?.minWaitTime ?? prepareOutput?.minWaitTime ?? 0
   const prevFirstFinishTime = prepareOutput?.firstFinishTime ?? prevRunData?.firstFinishTime ?? 0
 
 
-  if (((prepareOutput?.totalTime ?? 0) > 0 && !hasFormulas) || hackThreads <= 0 || remainingRetries <= 0) {
+  if (((prepareOutput?.totalTime ?? 0) > 0 && !hasFormulas) || hackThreads <= 0 || remainingRetries <= 0 || prepareType === "no") {
     runAllocatedScripts(ns,
       prevRunData ? prevRunData.allocations : prepareOutput?.allocations ?? emptyAllocatorOutput(ns, servers),
     )
@@ -106,10 +108,12 @@ function hackServer(ns: NS, target: string, servers: string[], targetPercentage 
         threadEfficiency,
         timeEfficiency,
         efficiency,
-        prepared: prevRunData?.prepared ?? (prepareOutput?.firstFinishTime === 0 ? "already" : (prepareOutput?.fullPrepare ? "fullNoBatches" : "partial"))
+        prepared: prepareType
       }
     }
-    ns.print(`SUCCESS: Prepared server ${target} ${prevRunData ? "partially again" : (prepareOutput?.fullPrepare ? "fully" : "partially")}, but couldn't launch any batches${!hasFormulas ? " because Formulas.exe is missing" : ""}. Will retry${remainingRetries > 1 ? ` ${remainingRetries - 1} more times` : ""}...`)
+    if (prepareType !== "already" && prepareType !== "no") {
+      ns.print(`SUCCESS: Prepared server ${target} (${prepareType}), but couldn't launch any batches${!hasFormulas ? " because Formulas.exe is missing" : ""}.`)
+    }
     return {
       totalTime: prevRunData?.totalTime ?? prepareOutput?.totalTime ?? 0,
       firstFinishTime: prevRunData?.firstFinishTime ?? prepareOutput?.firstFinishTime ?? 0,
@@ -117,7 +121,7 @@ function hackServer(ns: NS, target: string, servers: string[], targetPercentage 
       threadEfficiency: 0,
       timeEfficiency: 0,
       efficiency: 0,
-      prepared: prevRunData?.prepared ?? (prepareOutput?.firstFinishTime === 0 ? "already" : (prepareOutput?.fullPrepare ? "fullNoBatches" : "partial"))
+      prepared: prepareType
     }
   }
 
@@ -158,7 +162,7 @@ function hackServer(ns: NS, target: string, servers: string[], targetPercentage 
     totalTime,
     minWaitTime,
     firstFinishTime,
-    prepared: prevRunData?.prepared ?? (prepareOutput?.firstFinishTime === 0 ? "already" : (prepareOutput?.fullPrepare ? (batchesLaunched === 0 ? "fullNoBatches" : "full") : "partial")),
+    prepared: prepareType === "fullNoBatches" && batchesLaunched > 0 ? "full" : prepareType,
     prepareThreadsUsed: prepareOutput ? prepareOutput.threadsUsed : prevRunData?.prepareThreadsUsed ?? [0, 0, 0],
     batches: [...(prevRunData?.batches ?? []), { amount: batchesLaunched, threadsUsed: [hackThreads, weakThreads1, growThreads, weakThreads2] }],
     totalHackedMoney: hackedMoney * batchesLaunched + (prevRunData?.totalHackedMoney ?? 0)

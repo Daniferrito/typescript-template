@@ -14,14 +14,5 @@ export async function main(ns: NS): Promise<void> {
       await ns.singularity.installBackdoor()
     }
   }
-  await connectServer(ns, "home") // connect back to home at the end
-  const invitations = ns.singularity.checkFactionInvitations()
-  if (invitations.length > 0) {
-    ns.print(`Joining factions: ${invitations.join(", ")}`)
-    for (const faction of invitations) {
-      if (ns.singularity.getFactionEnemies(faction).length === 0) {
-        ns.singularity.joinFaction(faction)
-      }
-    }
-  }
+  connectServer(ns, "home") // connect back to home at the end
 }

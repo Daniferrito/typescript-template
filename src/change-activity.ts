@@ -1,0 +1,47 @@
+import { NS } from "@ns";
+import { hasRemainingAugmentations } from "./utils/factionHandling";
+import { CityName, CompanyName, UniversityClassType, UniversityLocationName } from "./utils/enums";
+
+export async function main(ns: NS): Promise<void> {
+
+  let isFirstTime = true
+  for (; ;) {
+    if (isFirstTime) {
+      isFirstTime = false
+    } else {
+      await ns.sleep(10 * 1000)
+    }
+    const player = ns.getPlayer()
+    // If we have any faction work where we need reputation for unlocking new augmentations, do that first
+    const factions = player.factions
+    const faction = factions.find(f => hasRemainingAugmentations(ns, f))
+    if (faction) {
+      const factionWorkTypes = ns.singularity.getFactionWorkTypes(faction).map(wt => ({ workType: wt, repGain: ns.formulas.work.factionGains(player, wt, 1).reputation })).sort((a, b) => b.repGain - a.repGain)
+      ns.singularity.workForFaction(faction, factionWorkTypes[0].workType)
+      continue
+    }
+    // Work for a company that we are in and that has a faction with augmentations we dont have yet
+    const company = Object.keys(player.jobs).find(company => ns.singularity.getCompanyRep(company as CompanyName) < 400_000)
+    if (company) {
+      ns.singularity.workForCompany(company as CompanyName)
+      continue
+    }
+    // Study in whatever university we have access to
+    if (ns.getServerMoneyAvailable("home") >= 10_000_000) {
+      ns.singularity.travelToCity("Volhaven")
+    }
+    if (Object.prototype.hasOwnProperty.call(universitiesByCity, player.city)) {
+      const location = universitiesByCity[player.city as keyof typeof universitiesByCity];
+      ns.singularity.universityCourse(location, UniversityClassType.computerScience);
+    }
+
+    // Nothing to do, just wait a bit
+  }
+}
+
+const universitiesByCity = {
+  "Aevum": UniversityLocationName.AevumSummitUniversity,
+  "Sector-12": UniversityLocationName.Sector12RothmanUniversity,
+  "Volhaven": UniversityLocationName.VolhavenZBInstituteOfTechnology,
+} satisfies Partial<Record<CityName, UniversityLocationName>>
+

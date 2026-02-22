@@ -1,14 +1,11 @@
 import React, { ReactDOM } from 'lib/react';
 import { NS } from "@ns";
 
-import getServers from "./utils/getServers";
 import hackServer, { HackServerOutput } from "./utils/hackServer";
 import { SHARE_SCRIPT, waitTimeMs } from "./utils/constants";
-import { upgradeHome, buyOrUpgradeServers, buyPrograms } from "./utils/upgradingThings";
 import { calcSortedServerToHack } from "./utils/serversSorting";
-import { joinFactions } from "./utils/factionHandling";
-import { upgradeJobs } from './utils/jobsHandler';
 import { scanServers } from './utils/scan-servers';
+import { runSomewhereUnique } from './utils/runScript';
 
 let ns: NS
 
@@ -20,7 +17,7 @@ export async function main(_ns: NS): Promise<void> {
   ns.print("------------------------------")
 
   ns.disableLog("ALL")
-  startupScripts(ns)
+  startupScripts(ns,)
 
   ns.ui.openTail()
   ns.ui.resizeTail(2000, 400)
@@ -35,42 +32,33 @@ export async function main(_ns: NS): Promise<void> {
 
   for (; ;) {
     await multiHack(ns, ns.args[0] ? ns.args as string[] : undefined)
+    ns.tprint("ERROR  : multiHack returned, this should never happen, something is wrong")
   }
 }
 
 async function startupScripts(ns: NS): Promise<void> {
-  scanServers(ns)
-  ns.exec("solve-coding-contracts.js", "home", {
-    preventDuplicates: true,
-  })
-  ns.exec("hacknet-improve.js", "home", {
-    preventDuplicates: true,
-  })
+  const servers = scanServers(ns).hackedServers
+  runSomewhereUnique(ns, "upgrade-things.js", servers)
+  runSomewhereUnique(ns, "solve-coding-contracts.js", servers)
+  runSomewhereUnique(ns, "hacknet-improve.js", servers)
+  runSomewhereUnique(ns, "join-factions-jobs.js", servers)
+  runSomewhereUnique(ns, "change-activity.js", servers)
   const homeServer = ns.getServer("home")
-  if (homeServer.maxRam >= 2 ** 8) {
-    const ramToUse = homeServer.maxRam * 0.05
-    const ramForScript = ns.getScriptRam(SHARE_SCRIPT)
-    const threads = Math.floor(ramToUse / ramForScript)
-    ns.kill(SHARE_SCRIPT, "home")
-    ns.exec(SHARE_SCRIPT, "home", threads)
+  if (!(homeServer.maxRam >= 2 ** 8)) {
+    return;
   }
+  const ramToUse = homeServer.maxRam * 0.05
+  const ramForScript = ns.getScriptRam(SHARE_SCRIPT)
+  const threads = Math.floor(ramToUse / ramForScript)
+  ns.kill(SHARE_SCRIPT, "home")
+  ns.exec(SHARE_SCRIPT, "home", threads)
 }
 
-async function buyThings(ns: NS): Promise<boolean> {
-  const upgradeHomeResult = upgradeHome(ns)
-  const buyProgramsResult = buyPrograms(ns)
-  const buyOrUpgradeServersResult = buyOrUpgradeServers(ns)
-  const joinFactionsResult = await joinFactions(ns)
-  return upgradeHomeResult || buyProgramsResult || buyOrUpgradeServersResult || joinFactionsResult;
-}
-
-async function preCycleUpgrade(ns: NS, servers: string[]): Promise<string[]> {
-  await upgradeJobs(ns)
-  const changes = await buyThings(ns)
-  if (changes) {
-    return scanServers(ns).hackedServers
+async function preCycleUpgrade(ns: NS): Promise<string[]> {
+  while (ns.singularity.upgradeHomeRam()) {
+    // Repeat until we can't upgrade anymore
   }
-  return servers
+  return scanServers(ns).hackedServers
 }
 
 interface Timer {
@@ -84,9 +72,8 @@ const timers: Timer[] = []
 
 async function multiHack(ns: NS, fixedTargets?: string[]): Promise<never> {
   timers.splice(0, timers.length) // clear timers
-  let servers = getServers(ns)
   for (; ;) {
-    servers = await preCycleUpgrade(ns, servers)
+    const servers = await preCycleUpgrade(ns)
     const targets = (fixedTargets && fixedTargets.length > 0) ? fixedTargets : calcSortedServerToHack(ns, servers)
     // Get first target that does not have a batch running
     const filteredTargets = targets.filter(t => !timers.some(timer => timer.hostname === t))
@@ -94,6 +81,7 @@ async function multiHack(ns: NS, fixedTargets?: string[]): Promise<never> {
       let couldStartBatch = false
       for (const target of filteredTargets) {
         const output = hackServer(ns, target, servers)
+        // ns.print(`INFO   : Hack attempt on ${target} finished. Efficiency: ${ns.formatNumber(output.efficiency, 0)}$/th/s. Prepared: ${output.prepared}. Time until first batch can finish: ${ns.tFormat(output.firstFinishTime)}. Total time until all batches finish: ${ns.tFormat(output.totalTime)}.`)
         if (output.totalTime > 0) {
           const now = Date.now()
           timers.push({
@@ -167,30 +155,6 @@ function TimerComponent() {
     </table>
     // </th>
   )
-}
-
-function ProgressBar({ progress }: { progress: number }): React.ReactElement {
-  return (
-    <span
-      style={{
-        overflow: "hidden",
-        display: "block",
-        height: "4px",
-        position: "relative",
-        backgroundColor: "rgb(17,17,17)"
-      }}
-      role="progressbar" aria-valuenow={progress * 100} aria-valuemin={0} aria-valuemax={100}>
-      <span
-        style={{
-          width: `100%`,
-          left: 0,
-          bottom: 0,
-          top: 0,
-          transform: `translateX(${-100 + progress * 100}%)`,
-          backgroundColor: "rgb(173, 255, 47)",
-          position: "absolute",
-        }} />
-    </span >)
 }
 
 // progress1 marsk the right of the bar, and progress2 marks the left

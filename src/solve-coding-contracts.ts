@@ -5,6 +5,7 @@ export async function main(ns: NS): Promise<void> {
   ns.print("------------------------------")
   ns.print("Starting contracts script...")
   ns.print("------------------------------")
+  ns.scp("servers.txt", ns.getHostname(), "home")
   const servers = ns.read("servers.txt").split("\n")
 
   if (!testContracts(ns)) {

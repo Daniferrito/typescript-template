@@ -2,9 +2,14 @@
 import { NS } from "@ns";
 import { targetMoneyToHackPercentage, waitTimeMs } from "./constants";
 
+interface ServerToHack {
+  target: string
+  hackAmount: number
+}
+
 export function calcSortedServerToHack(ns: NS, servers: string[]): string[] {
   const serversWithSortVal = calcSortedServerToHackRaw(ns, servers)
-  const bestVal = serversWithSortVal[0].sortVals[2]
+  const bestVal = serversWithSortVal[0].sortVal
 
   if (bestVal < 0) {
     return serversWithSortVal.map(s => s.serverName)
@@ -12,24 +17,24 @@ export function calcSortedServerToHack(ns: NS, servers: string[]): string[] {
 
   // Only take those that have at least 10% of the best value, to avoid wasting time on very bad servers
   // Only take the first 5 servers
-  return serversWithSortVal.filter(s => (bestVal < 0) || (s.sortVals[2] >= 0.1 * bestVal)).map(s => s.serverName).slice(0, 10)
+  return serversWithSortVal.filter(s => (bestVal < 0) || (s.sortVal >= 0.1 * bestVal)).map(s => s.serverName).slice(0, 10)
 }
 
-export function calcSortedServerToHackRaw(ns: NS, servers: string[]): { serverName: string, sortVals: [number, number, number, number, number] }[] {
+export function calcSortedServerToHackRaw(ns: NS, servers: string[]): { serverName: string, sortVal: number }[] {
   servers = servers.filter(serverName => {
     const server = ns.getServer(serverName)
     const p = ns.getPlayer()
     return (server.serverGrowth ?? 0) > 10 && (server.moneyMax ?? 0) > 1 && (server.requiredHackingSkill ?? Infinity) <= p.skills.hacking && server.hasAdminRights
   })
 
-  return servers.map(serverName => ({ serverName, sortVals: upgradedServerToSortVal(ns, serverName) })).sort((a, b) => b.sortVals[2] - a.sortVals[2])
+  return servers.map(serverName => ({ serverName, sortVal: upgradedServerToSortVal(ns, serverName) })).sort((a, b) => b.sortVal - a.sortVal)
 }
 
 export function calcBestServerToHack(ns: NS, servers: string[]): string {
   return calcSortedServerToHack(ns, servers)[0]
 }
 
-function upgradedServerToSortVal(ns: NS, serverName: string): [number, number, number, number, number] {
+function upgradedServerToSortVal(ns: NS, serverName: string): number {
   const hasFormulas = ns.fileExists("Formulas.exe", "home")
 
   const server = ns.getServer(serverName)
@@ -40,7 +45,7 @@ function upgradedServerToSortVal(ns: NS, serverName: string): [number, number, n
   const serverGrowth = server.serverGrowth ?? 0
 
   if (serverGrowth <= 10 || maxMoney < 1 || (server.requiredHackingSkill ?? Infinity) > player.skills.hacking || !server.hasAdminRights) {
-    return [0, 0, 0, 0, 0] // ignore home, filter servers with low cash/low growth/too high hacking reqs
+    return 0 // ignore home, filter servers with low cash/low growth/too high hacking reqs
   }
 
 
@@ -78,8 +83,8 @@ function upgradedServerToSortVal(ns: NS, serverName: string): [number, number, n
   const totalThreads = (hackThreads + weakThreads1 + growThreads + weakThreads2) * batchesLaunched
   const totalHackedMoney = hackedMoney * batchesLaunched
   const threadEfficiency = (totalHackedMoney) / totalThreads
-  const timeEfficiency = totalHackedMoney / (totalTime / 1000)
+  // const timeEfficiency = totalHackedMoney / (totalTime / 1000)
   const efficiency = threadEfficiency / (totalTime / 1000)
 
-  return [threadEfficiency, timeEfficiency, efficiency, totalTime, totalHackedMoney]
+  return efficiency
 }

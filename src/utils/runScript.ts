@@ -66,7 +66,7 @@ export function scriptAllocator(ns: NS, scripts: RunScriptOptions[], serverHostn
   )
   const serversToRunOn = scripts.map(() => [] as { hostname: string, threads: number }[]) // array of servers to run each script on, with the number of threads to run on each server
   const scriptRams = scripts.map(s => ns.getScriptRam(s.script))
-  const servers = prevScriptAllocation ? prevScriptAllocation.servers : serverHostnames
+  const servers = prevScriptAllocation ? JSON.parse(JSON.stringify(prevScriptAllocation.servers)) as AllocatorOutput["servers"] : serverHostnames
     .map(h => ns.getServer(h))
     .map(server => ({
       server,
@@ -145,7 +145,7 @@ export function scriptsFitOnServers(ns: NS, scripts: AllocatorOutput): boolean {
 
 export function runAllocatedScripts(ns: NS, scriptAllocations: AllocatorOutput): void {
   if (!allScriptsAllocated(scriptAllocations)) {
-    ns.tprint(`${RED}Cannot run scripts, not enough resources${RESET}`)
+    ns.tprint(`${RED}Cannot run scripts, not enough resources (${scriptAllocations.allocations.map(a => a.script).join(", ")})${RESET}`)
   }
   if (!scriptsFitOnServers(ns, scriptAllocations)) {
     ns.tprint(`${RED}Cannot run scripts, allocated scripts do not fit on servers${RESET}`)
@@ -177,4 +177,20 @@ export function runMultipleScripts(ns: NS, scripts: RunScriptOptions[], serverHo
     return true
   }
   return false
+}
+
+export function runSomewhereUnique(ns: NS, scriptName: string, serverHostnames: string[]): void {
+  const isRunningSomewhere = serverHostnames.some(hostname => ns.isRunning(scriptName, hostname))
+  if (isRunningSomewhere) {
+    return
+  }
+  const allocation = scriptAllocator(ns, [{ script: scriptName, args: [], threads: 1 }], serverHostnames)
+  if (allocation.allocations.length > 0 && allocation.allocations[0].servers.length > 0) {
+    for (const server of allocation.allocations[0].servers) {
+      ns.scp(scriptName, server.hostname, "home")
+    }
+    runAllocatedScripts(ns, allocation)
+  } else {
+    ns.print(`WARNING: Failed to run script ${scriptName} (${ns.getScriptRam(scriptName)} RAM) somewhere unique, not enough resources`)
+  }
 }
