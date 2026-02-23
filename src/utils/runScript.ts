@@ -66,7 +66,7 @@ export function scriptAllocator(ns: NS, scripts: RunScriptOptions[], serverHostn
   )
   const serversToRunOn = scripts.map(() => [] as { hostname: string, threads: number }[]) // array of servers to run each script on, with the number of threads to run on each server
   const scriptRams = scripts.map(s => ns.getScriptRam(s.script))
-  const servers = prevScriptAllocation ? JSON.parse(JSON.stringify(prevScriptAllocation.servers)) as AllocatorOutput["servers"] : serverHostnames
+  const servers = prevScriptAllocation ? structuredClone(prevScriptAllocation.servers) : serverHostnames
     .map(h => ns.getServer(h))
     .map(server => ({
       server,
@@ -87,7 +87,7 @@ export function scriptAllocator(ns: NS, scripts: RunScriptOptions[], serverHostn
       }
       const availableRam = server.maxRam - server.ramUsed - serverContainer.prevReservedRam - ramReservation(server) // leave some ram on home for other scripts
       if (scripts[i].allowPartial) {
-        const maxThreadsForScript = Math.floor(availableRam / adjustThreadsForCores(scriptRams[i], server.cpuCores, scripts[i].useCores))
+        const maxThreadsForScript = Math.floor(availableRam / scriptRams[i])
         if (maxThreadsForScript > 0) {
           const threadsToRun = Math.min(maxThreadsForScript, remainingThreadsToSchedule)
           serversToRunOn[i].push({ hostname: server.hostname, threads: threadsToRun })
@@ -147,9 +147,9 @@ export function runAllocatedScripts(ns: NS, scriptAllocations: AllocatorOutput):
   // if (!allScriptsAllocated(scriptAllocations)) {
   //   ns.tprint(`${RED}Cannot run scripts, not enough resources (${scriptAllocations.allocations.map(a => a.script).join(", ")})${RESET}`)
   // }
-  if (!scriptsFitOnServers(ns, scriptAllocations)) {
-    ns.tprint(`${RED}Cannot run scripts, allocated scripts do not fit on servers ${scriptAllocations.allocations.map(a => a.script).join(", ")}${RESET}`)
-  }
+  // if (!scriptsFitOnServers(ns, scriptAllocations)) {
+  //   ns.tprint(`${RED}Cannot run scripts, allocated scripts do not fit on servers ${scriptAllocations.allocations.map(a => a.script).join(", ")}${RESET}`)
+  // }
   for (const allocation of scriptAllocations.allocations) {
     for (const server of allocation.servers) {
       if (server && allocation.threads > 0) {
