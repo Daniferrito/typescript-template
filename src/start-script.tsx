@@ -6,6 +6,9 @@ import { SHARE_SCRIPT, waitTimeMs } from "./utils/constants";
 import { calcSortedServerToHack } from "./utils/serversSorting";
 import { scanServers } from './utils/scan-servers';
 import { runSomewhereUnique } from './utils/runScript';
+import { formatTimeShort } from './utils/formatting';
+
+const doc = eval("document") as Document
 
 let ns: NS
 
@@ -23,7 +26,7 @@ export async function main(_ns: NS): Promise<void> {
   ns.ui.resizeTail(2000, 400)
   ns.ui.moveTail(550, 820)
 
-  const overviewExtraHook = document.getElementById('overview-extra-hook-0')
+  const overviewExtraHook = doc.getElementById('overview-extra-hook-0')
   if (overviewExtraHook && overviewExtraHook.parentElement) {
     (overviewExtraHook.parentElement as HTMLTableCellElement).colSpan = 2
   }
@@ -146,7 +149,7 @@ function TimerComponent() {
               color: preparedTypeToColor(timer.output.prepared)
             }}>
               <td style={{ textAlign: "start" }}>{timer.hostname}</td>
-              <td>{ns.tFormat(timer.timeFinishes - now).split(" ").splice(0, 2).map(s => s.substring(0, 3)).join(" ")}</td>
+              <td>{formatTimeShort(timer.timeFinishes - now)}</td>
               <td>{`${ns.formatNumber(timer.output.efficiency, 0).padStart(4, ' ')}$/th/s`}</td>
             </tr>
             <tr key={`${timer.hostname}-progress`}><td colSpan={3}><DoubleProgressBar progress1={(now - timer.timeStarted) / (timer.timeFinishes - timer.timeStarted)} progress2={(now - timer.timeStarted) / (timer.timeStartsFinishing - timer.timeStarted)} /></td></tr>
