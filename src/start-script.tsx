@@ -150,7 +150,7 @@ function TimerComponent() {
             }}>
               <td style={{ textAlign: "start" }}>{timer.hostname}</td>
               <td>{formatTimeShort(timer.timeFinishes - now)}</td>
-              <td>{`${ns.formatNumber(timer.output.efficiency, 0).padStart(4, ' ')}$/th/s`}</td>
+              <td>{`${ns.formatNumber(timer.output.efficiency, 0).padStart(4, ' ')}`}</td>
             </tr>
             <tr key={`${timer.hostname}-progress`}><td colSpan={3}><DoubleProgressBar progress1={(now - timer.timeStarted) / (timer.timeFinishes - timer.timeStarted)} progress2={(now - timer.timeStarted) / (timer.timeStartsFinishing - timer.timeStarted)} /></td></tr>
           </>
