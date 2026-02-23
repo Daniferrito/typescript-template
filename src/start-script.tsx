@@ -146,7 +146,7 @@ function TimerComponent() {
               color: preparedTypeToColor(timer.output.prepared)
             }}>
               <td style={{ textAlign: "start" }}>{timer.hostname}</td>
-              <td>{ns.tFormat(timer.timeFinishes - now)}</td>
+              <td>{ns.tFormat(timer.timeFinishes - now).split(" ").splice(0, 2).map(s => s.substring(0, 3)).join(" ")}</td>
               <td>{`${ns.formatNumber(timer.output.efficiency, 0).padStart(4, ' ')}$/th/s`}</td>
             </tr>
             <tr key={`${timer.hostname}-progress`}><td colSpan={3}><DoubleProgressBar progress1={(now - timer.timeStarted) / (timer.timeFinishes - timer.timeStarted)} progress2={(now - timer.timeStarted) / (timer.timeStartsFinishing - timer.timeStarted)} /></td></tr>
