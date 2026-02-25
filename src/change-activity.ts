@@ -1,5 +1,5 @@
 import { NS } from "@ns";
-import { hasRemainingAugmentations } from "./utils/factionHandling";
+import { hasRemainingAugmentations, shouldJoinFaction } from "./utils/factionHandling";
 import { CityName, CompanyName, UniversityClassType, UniversityLocationName } from "./utils/enums";
 
 export async function main(ns: NS): Promise<void> {
@@ -16,7 +16,7 @@ export async function main(ns: NS): Promise<void> {
     const player = ns.getPlayer()
     // If we have any faction work where we need reputation for unlocking new augmentations, do that first
     const factions = player.factions.reverse()
-    const faction = factions.find(f => hasRemainingAugmentations(ns, f))
+    const faction = factions.find(f => hasRemainingAugmentations(ns, f) && shouldJoinFaction(ns, f))
     if (faction) {
       const factionWorkTypes = ns.singularity.getFactionWorkTypes(faction).map(wt => ({ workType: wt, repGain: hasFormulas ? ns.formulas.work.factionGains(player, wt, 1).reputation : 0 })).sort((a, b) => b.repGain - a.repGain)
       ns.singularity.workForFaction(faction, factionWorkTypes[0].workType, !hasNeuroReceptorManager)

@@ -8,6 +8,6 @@ export async function main(ns: NS): Promise<void> {
   const sorted = calcSortedServerToHackRaw(ns, servers).reverse() // reverse to have the best servers last
   ns.print("All servers with their sort value:")
   for (const server of sorted) {
-    ns.print(`Server ${server.serverName.padStart(18)}, sort value: ${ns.formatNumber(server.sortVal, 0).padStart(4)}$/th/s`)
+    ns.print(`Server ${server.hostname.padStart(18)}, sort value: ${ns.formatNumber(server.efficiency, 0).padStart(4)}$/th/s`)
   }
 }

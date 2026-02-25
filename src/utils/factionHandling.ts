@@ -119,14 +119,15 @@ function augmentationHasUnownedPrerequisites(ns: NS, augmentation: string, facti
 
 function factionHas150Favor(ns: NS, faction: string): boolean {
   const favor = ns.singularity.getFactionFavor(faction)
-  return favor >= 150
+  const futureFavor = ns.singularity.getFactionFavorGain(faction)
+  return favor + futureFavor >= 150
 }
 
-function shouldJoinFaction(ns: NS, faction: string): boolean {
-  // Dont join factions that have enemies, as we will never do anything with those
-  if (ns.singularity.getFactionEnemies(faction).length > 0) {
-    return false
-  }
+export function shouldJoinFaction(ns: NS, faction: string): boolean {
+  // // Dont join factions that have enemies, as we will never do anything with those
+  // if (ns.singularity.getFactionEnemies(faction).length > 0) {
+  //   return false
+  // }
   // Dont join factions that only have augmentations that we already have, or that other factions we are in have, as we can get those from those factions instead if we want them
   if (!hasRemainingAugmentations(ns, faction)) {
     return false

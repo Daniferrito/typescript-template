@@ -14,6 +14,9 @@ export function buyOrUpgradeServers(ns: NS): boolean {
 
   // Find the server with the least ram and upgrade it as much as possible, then repeat
   for (const server of ns.getPurchasedServers().sort((a, b) => ns.getServerMaxRam(a) - ns.getServerMaxRam(b))) {
+    if (ns.getServerUsedRam(server) < ns.getServerMaxRam(server) * 0.1) {
+      continue // skip servers that are barely used, as we dont need to upgrade servers that we dont need
+    }
     for (let i = 20; i > 1; i--) {
       const ram = 2 ** i
       if (ns.getServerMaxRam(server) >= ram) {

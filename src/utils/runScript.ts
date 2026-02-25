@@ -143,7 +143,8 @@ export function scriptsFitOnServers(ns: NS, scripts: AllocatorOutput): boolean {
   return true
 }
 
-export function runAllocatedScripts(ns: NS, scriptAllocations: AllocatorOutput): void {
+export function runAllocatedScripts(ns: NS, scriptAllocations: AllocatorOutput): number[] {
+  const pids: number[] = []
   // if (!allScriptsAllocated(scriptAllocations)) {
   //   ns.tprint(`${RED}Cannot run scripts, not enough resources (${scriptAllocations.allocations.map(a => a.script).join(", ")})${RESET}`)
   // }
@@ -165,9 +166,11 @@ export function runAllocatedScripts(ns: NS, scriptAllocations: AllocatorOutput):
         if (pid === 0) {
           ns.tprint(`${CYAN}Failed to run script ${allocation.script} on server ${server.hostname} with ${threads} threads, Av RAM: ${ns.getServer(server.hostname).maxRam - ns.getServer(server.hostname).ramUsed} Req RAM: ${threads * ns.getScriptRam(allocation.script)}${RESET}`)
         }
+        pids.push(pid)
       }
     }
   }
+  return pids
 }
 
 export function runMultipleScripts(ns: NS, scripts: RunScriptOptions[], serverHostnames: string[]): boolean {

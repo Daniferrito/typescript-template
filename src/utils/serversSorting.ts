@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { NS } from "@ns";
 import { targetMoneyToHackPercentage, waitTimeMs } from "./constants";
+import { calcEfficiency, hackAnalyze, HackAnalyzeResult } from "./hackAnalize";
 
 interface ServerToHack {
   target: string
@@ -9,25 +10,24 @@ interface ServerToHack {
 
 export function calcSortedServerToHack(ns: NS, servers: string[]): string[] {
   const serversWithSortVal = calcSortedServerToHackRaw(ns, servers)
-  const bestVal = serversWithSortVal[0].sortVal
+  const bestVal = serversWithSortVal[0].efficiency
 
   if (bestVal < 0) {
-    return serversWithSortVal.map(s => s.serverName)
+    return serversWithSortVal.map(s => s.hostname)
   }
 
   // Only take those that have at least 10% of the best value, to avoid wasting time on very bad servers
-  // Only take the first 5 servers
-  return serversWithSortVal.filter(s => (bestVal < 0) || (s.sortVal >= 0.1 * bestVal)).map(s => s.serverName).slice(0, 10)
+  return serversWithSortVal.filter(s => (bestVal < 0) || (s.efficiency >= 0.1 * bestVal)).map(s => s.hostname)
 }
 
-export function calcSortedServerToHackRaw(ns: NS, servers: string[]): { serverName: string, sortVal: number }[] {
+export function calcSortedServerToHackRaw(ns: NS, servers: string[]): HackAnalyzeResult[] {
   servers = servers.filter(serverName => {
     const server = ns.getServer(serverName)
     const p = ns.getPlayer()
     return (server.serverGrowth ?? 0) > 10 && (server.moneyMax ?? 0) > 1 && (server.requiredHackingSkill ?? Infinity) <= p.skills.hacking && server.hasAdminRights
   })
 
-  return servers.map(serverName => ({ serverName, sortVal: upgradedServerToSortVal(ns, serverName) })).sort((a, b) => b.sortVal - a.sortVal)
+  return servers.map(serverName => hackAnalyze(ns, serverName)).sort((a, b) => b.efficiency - a.efficiency)
 }
 
 export function calcBestServerToHack(ns: NS, servers: string[]): string {

@@ -3,10 +3,11 @@ import { NS } from "@ns";
 
 import hackServer, { HackServerOutput } from "./utils/hackServer";
 import { SHARE_SCRIPT, waitTimeMs } from "./utils/constants";
-import { calcSortedServerToHack } from "./utils/serversSorting";
+import { calcSortedServerToHackRaw } from "./utils/serversSorting";
 import { scanServers } from './utils/scan-servers';
 import { runSomewhereUnique } from './utils/runScript';
 import { formatTimeShort } from './utils/formatting';
+import { HackAnalyzeResult } from './utils/hackAnalize';
 
 const doc = eval("document") as Document
 
@@ -67,6 +68,7 @@ async function preCycleUpgrade(ns: NS): Promise<string[]> {
 
 interface Timer {
   hostname: string
+  input: HackAnalyzeResult
   output: HackServerOutput
   timeStarted: number
   timeFinishes: number
@@ -74,45 +76,74 @@ interface Timer {
 }
 const timers: Timer[] = []
 
+function killLowEffScriptsGen(timers: Timer[]): (efficiencyThreshold: number) => boolean {
+  return (efficiencyThreshold: number): boolean => {
+    let killedAny = false
+    const now = Date.now()
+    for (const timer of timers) {
+      if (timer.timeStartsFinishing > now) {
+        continue
+      }
+      const totalTime = timer.timeFinishes - now
+
+      const totalThreads = timer.output.batchesLaunched * timer.input.totalThreads
+      const totalHackedMoney = timer.input.totalHackedMoney
+      const threadEfficiency = (totalHackedMoney) / totalThreads
+
+      const efficiency = threadEfficiency / (totalTime / 1000)
+      if (efficiency < efficiencyThreshold) {
+        ns.print(`WARN   : Killing batch on ${timer.hostname} with efficiency ${ns.formatNumber(efficiency, 2)}$/th/s, which is below the threshold of ${ns.formatNumber(efficiencyThreshold, 2)}$/th/s`)
+        for (const batch of timer.output.batchPids) {
+          for (const pid of batch) {
+            ns.kill(pid)
+          }
+        }
+        killedAny = true
+      }
+    }
+    return killedAny
+  }
+}
+let maxEff = 0
 async function multiHack(ns: NS, fixedTargets?: string[]): Promise<never> {
   timers.splice(0, timers.length) // clear timers
+  maxEff = 0
   for (; ;) {
     const servers = await preCycleUpgrade(ns)
-    const targets = (fixedTargets && fixedTargets.length > 0) ? fixedTargets : calcSortedServerToHack(ns, servers)
+    const targets = (fixedTargets && fixedTargets.length > 0) ? fixedTargets : servers
     // Get first target that does not have a batch running
     const filteredTargets = targets.filter(t => !timers.some(timer => timer.hostname === t))
-    if (filteredTargets.length) {
-      let couldStartBatch = false
-      for (const target of filteredTargets) {
-        const output = hackServer(ns, target, servers)
+    const sortedTargets = calcSortedServerToHackRaw(ns, filteredTargets).filter(t => t.efficiency > maxEff * 0.01)
+    maxEff = Math.max(maxEff, sortedTargets[0]?.efficiency ?? 0)
+    if (sortedTargets.length) {
+      // let couldStartBatch = false
+      for (const target of sortedTargets) {
+        const output = hackServer(ns, target, servers, killLowEffScriptsGen(timers))
         // ns.print(`INFO   : Hack attempt on ${target} finished. Efficiency: ${ns.formatNumber(output.efficiency, 0)}$/th/s. Prepared: ${output.prepared}. Time until first batch can finish: ${ns.tFormat(output.firstFinishTime)}. Total time until all batches finish: ${ns.tFormat(output.totalTime)}.`)
         if (output.totalTime > 0) {
           const now = Date.now()
           timers.push({
-            hostname: target,
+            hostname: target.hostname,
             timeStarted: now,
             timeFinishes: now + output.totalTime,
             timeStartsFinishing: now + output.firstFinishTime,
+            input: target,
             output,
           })
-          couldStartBatch = true
+          // couldStartBatch = true
         }
       }
-      if (!couldStartBatch) {
-        if (timers.length === 0) {
-          ns.tprint("ERROR  : Couldn't start any batch, but no timers? This should never happen, something is wrong")
-          await ns.asleep(5 * 1000)
-        } else {
-          await waitForNextTimer(ns, timers)
-        }
-      }
-    } else {
-      await waitForNextTimer(ns, timers)
     }
+    await waitForNextTimer(ns, timers)
+
   }
 }
 
 async function waitForNextTimer(ns: NS, timers: Timer[]): Promise<void> {
+  if (timers.length === 0) {
+    await ns.asleep(5 * 1000)
+    return
+  }
   const nextTimer = timers.reduce((prev, curr) => prev.timeFinishes < curr.timeFinishes ? prev : curr)
   const timeToWait = Math.min(5 * 1000, nextTimer.timeFinishes - Date.now())
   if (timeToWait > 0) {
@@ -135,29 +166,31 @@ function TimerComponent() {
 
   return (
     // <th colSpan={2}>
-    <table>
-      <thead><tr>
-        <td>Hostname</td>
-        <td>Time</td>
-        <td>Eff</td>
-      </tr></thead>
-      <tbody>
-        {timers.map(timer => (
-          <>
-            <tr key={timer.hostname} style={{
-              textAlign: "end",
-              color: preparedTypeToColor(timer.output.prepared)
-            }}>
-              <td style={{ textAlign: "start" }}>{timer.hostname}</td>
-              <td>{formatTimeShort(timer.timeFinishes - now)}</td>
-              <td>{`${ns.formatNumber(timer.output.efficiency, 0).padStart(4, ' ')}`}</td>
-            </tr>
-            <tr key={`${timer.hostname}-progress`}><td colSpan={3}><DoubleProgressBar progress1={(now - timer.timeStarted) / (timer.timeFinishes - timer.timeStarted)} progress2={(now - timer.timeStarted) / (timer.timeStartsFinishing - timer.timeStarted)} /></td></tr>
-          </>
-        ))}
-      </tbody>
-    </table>
-    // </th>
+    <>
+      <p>Total: {ns.formatNumber(timers.reduce((acc, timer) => acc + timer.output.timeEfficiency, 0), 0)}$/s (${ns.formatNumber(maxEff, 0)}$/th/s)</p>
+      <table>
+        <thead><tr>
+          <td>Hostname</td>
+          <td>Time</td>
+          <td>Eff</td>
+        </tr></thead>
+        <tbody>
+          {timers.map(timer => (
+            <>
+              <tr key={timer.hostname} style={{
+                textAlign: "end",
+                color: preparedTypeToColor(timer.output.prepared)
+              }}>
+                <td style={{ textAlign: "start" }}>{timer.hostname}</td>
+                <td>{formatTimeShort(timer.timeFinishes - now)}</td>
+                <td>{`${ns.formatNumber(timer.output.efficiency, 0).padStart(4, ' ')}`}</td>
+              </tr>
+              <tr key={`${timer.hostname}-progress`}><td colSpan={3}><DoubleProgressBar progress1={(now - timer.timeStarted) / (timer.timeFinishes - timer.timeStarted)} progress2={(now - timer.timeStarted) / (timer.timeStartsFinishing - timer.timeStarted)} /></td></tr>
+            </>
+          ))}
+        </tbody>
+      </table>
+    </>
   )
 }
 

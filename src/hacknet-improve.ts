@@ -45,7 +45,7 @@ async function buyOption(ns: NS, option: Option) {
 }
 
 function getOptions(ns: NS): Option[] {
-  const money = ns.getServerMoneyAvailable("home")
+  const money = ns.getServerMoneyAvailable("home") * 0.01
   const income = getIncome(ns)
   const options: Pick<Option, "optionType" | "index" | "cost" | "increase">[] = []
   if (ns.hacknet.numNodes() < ns.hacknet.maxNumNodes()) {
