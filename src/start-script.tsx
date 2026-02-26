@@ -73,12 +73,12 @@ interface Timer {
   timeStarted: number
   timeFinishes: number
   timeStartsFinishing: number
+  killed: boolean
 }
 const timers: Timer[] = []
 
 function killLowEffScriptsGen(timers: Timer[]): (efficiencyThreshold: number) => boolean {
   return (efficiencyThreshold: number): boolean => {
-    let killedAny = false
     const now = Date.now()
     for (const timer of timers) {
       if (timer.timeStartsFinishing > now) {
@@ -86,22 +86,27 @@ function killLowEffScriptsGen(timers: Timer[]): (efficiencyThreshold: number) =>
       }
       const totalTime = timer.timeFinishes - now
 
-      const totalThreads = timer.output.batchesLaunched * timer.input.totalThreads
-      const totalHackedMoney = timer.input.totalHackedMoney
+      const totalThreads = timer.output.totalThreads
+      const totalHackedMoney = timer.output.totalHackedMoney
       const threadEfficiency = (totalHackedMoney) / totalThreads
 
       const efficiency = threadEfficiency / (totalTime / 1000)
-      if (efficiency < efficiencyThreshold) {
-        ns.print(`WARN   : Killing batch on ${timer.hostname} with efficiency ${ns.formatNumber(efficiency, 2)}$/th/s, which is below the threshold of ${ns.formatNumber(efficiencyThreshold, 2)}$/th/s`)
+      if (efficiency < efficiencyThreshold && !timer.killed) {
+        ns.print(`WARN   : Killing batch on ${timer.hostname} with efficiency ${ns.formatNumber(efficiency, 0)}$/th/s, which is below the threshold of ${ns.formatNumber(efficiencyThreshold, 2)}$/th/s`)
         for (const batch of timer.output.batchPids) {
           for (const pid of batch) {
             ns.kill(pid)
           }
         }
-        killedAny = true
+        timer.killed = true
+        if (timer.output.prepared === "already") {
+          // Remove the timer immediately if the server was already prepared
+          timers.splice(timers.indexOf(timer), 1)
+        }
+        return true
       }
     }
-    return killedAny
+    return false
   }
 }
 let maxEff = 0
@@ -109,6 +114,7 @@ async function multiHack(ns: NS, fixedTargets?: string[]): Promise<never> {
   timers.splice(0, timers.length) // clear timers
   maxEff = 0
   for (; ;) {
+    maxEff *= 0.95
     const servers = await preCycleUpgrade(ns)
     const targets = (fixedTargets && fixedTargets.length > 0) ? fixedTargets : servers
     // Get first target that does not have a batch running
@@ -118,6 +124,9 @@ async function multiHack(ns: NS, fixedTargets?: string[]): Promise<never> {
     if (sortedTargets.length) {
       // let couldStartBatch = false
       for (const target of sortedTargets) {
+        if (timers.length >= 20) {
+          break
+        }
         const output = hackServer(ns, target, servers, killLowEffScriptsGen(timers))
         // ns.print(`INFO   : Hack attempt on ${target} finished. Efficiency: ${ns.formatNumber(output.efficiency, 0)}$/th/s. Prepared: ${output.prepared}. Time until first batch can finish: ${ns.tFormat(output.firstFinishTime)}. Total time until all batches finish: ${ns.tFormat(output.totalTime)}.`)
         if (output.totalTime > 0) {
@@ -129,6 +138,7 @@ async function multiHack(ns: NS, fixedTargets?: string[]): Promise<never> {
             timeStartsFinishing: now + output.firstFinishTime,
             input: target,
             output,
+            killed: false
           })
           // couldStartBatch = true
         }
@@ -168,7 +178,7 @@ function TimerComponent() {
     // <th colSpan={2}>
     <>
       <p>Total: {ns.formatNumber(timers.reduce((acc, timer) => acc + timer.output.timeEfficiency, 0), 0)}$/s (${ns.formatNumber(maxEff, 0)}$/th/s)</p>
-      <table>
+      <table style={{ width: "100%" }}>
         <thead><tr>
           <td>Hostname</td>
           <td>Time</td>

@@ -84,12 +84,24 @@ function prepareServer(ns: NS, target: string, servers: string[]): PrepareServer
         } else {
           growThreads = Math.floor(growThreads * 0.9) // reduce the grow threads and try again, to free up some threads for weak2
           weakThreads2 = Math.ceil((2 * 0.002 * growThreads) / 0.05)
+
+          if (growThreads < originalThreadsWanted[1] * 0.1 && weakThreads1 === 0) {
+            // If we cant even allocate 10% of the grow threads, it's probably not worth it to prepare this server partially, so we just skip it
+            // ns.print(`ERROR  : Could not allocate enough threads to grow server ${target} (allocated ${growThreads} / wanted ${originalThreadsWanted[1]}), skipping...`)
+            return { allocations: emptyAllocatorOutput(ns, servers), totalTime: 0, minWaitTime: 0, firstFinishTime: 0, fullPrepare: false, threadsUsed: [0, 0, 0] }
+          }
         }
       }
     } else {
       weakThreads1 = partialPrepareAllocations.allocations.filter(a => a.script === WEAK_SCRIPT).reduce((sum, a) => sum + a.servers.reduce((s, server) => s + server.threads, 0), 0)
       growThreads = 0
       weakThreads2 = 0
+
+      if (weakThreads1 < originalThreadsWanted[0] * 0.1) {
+        // If we cant even allocate 10% of the weaken threads, it's probably not worth it to prepare this server partially, so we just skip it
+        // ns.print(`ERROR  : Could not allocate enough threads to weaken server ${target} (allocated ${weakThreads1} / wanted ${originalThreadsWanted[0]}), skipping...`)
+        return { allocations: emptyAllocatorOutput(ns, servers), totalTime: 0, minWaitTime: 0, firstFinishTime: 0, fullPrepare: false, threadsUsed: [0, 0, 0] }
+      }
     }
 
     const times = [0]

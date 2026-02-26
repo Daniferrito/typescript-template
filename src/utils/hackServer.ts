@@ -2,7 +2,7 @@ import { NS } from "@ns";
 import { AllocatorOutput, allScriptsAllocated, mergeAllocations, runAllocatedScripts, scriptAllocator } from "./runScript";
 import { GROW_SCRIPT, HACK_SCRIPT, waitTimeMs, WEAK_SCRIPT } from "./constants";
 import prepareServer, { PrepareServerOutput } from "./prepareServer";
-import { HackAnalyzeResult } from "./hackAnalize";
+import { calcEfficiency, hackAnalyze, HackAnalyzeResult } from "./hackAnalize";
 
 
 export interface HackServerOutput {
@@ -12,6 +12,7 @@ export interface HackServerOutput {
   prepared: "partial" | "fullNoBatches" | "full" | "already" | "no"
   batchesLaunched: number
   batchPids: number[][]
+  totalThreads: number
   threadEfficiency: number
   timeEfficiency: number
   efficiency: number
@@ -38,6 +39,7 @@ function hackServer(ns: NS, target: HackAnalyzeResult, servers: string[], killLo
       prepared: "already",
       batchesLaunched: 0,
       batchPids: [],
+      totalThreads: 0,
       threadEfficiency: 0,
       timeEfficiency: 0,
       efficiency: 0
@@ -83,7 +85,7 @@ function hackServer(ns: NS, target: HackAnalyzeResult, servers: string[], killLo
 
 
   if (hackThreads <= 0 || prepareType === "no") {
-    ns.print(`ERROR  : Can't hack ${target.hostname} because it requires 0 hack threads or preparation failed.`)
+    // ns.print(`ERROR  : Can't hack ${target.hostname} because it requires 0 hack threads or preparation failed.`)
     return {
       totalTime: 0,
       firstFinishTime: 0,
@@ -91,6 +93,7 @@ function hackServer(ns: NS, target: HackAnalyzeResult, servers: string[], killLo
       prepared: "already",
       batchesLaunched: 0,
       batchPids: [],
+      totalThreads: 0,
       threadEfficiency: 0,
       timeEfficiency: 0,
       efficiency: 0
@@ -111,7 +114,7 @@ function hackServer(ns: NS, target: HackAnalyzeResult, servers: string[], killLo
 
   const allocations = prepareOutput.allocations
 
-  while (extraWaitTime + minWaitTime < firstFinishTime && allScriptsAllocated(allocations)) {
+  while (/*extraWaitTime + minWaitTime < firstFinishTime &&*/ allScriptsAllocated(allocations) && prepareType !== "partial") {
 
     const newAllocations = scriptAllocator(ns, [
       { script: HACK_SCRIPT, threads: hackThreads, args: [target.hostname, hackWaitTime + extraWaitTime], useCores: false, allowPartial: false },
@@ -120,7 +123,10 @@ function hackServer(ns: NS, target: HackAnalyzeResult, servers: string[], killLo
       { script: WEAK_SCRIPT, threads: weakThreads2, args: [target.hostname, weakWaitTime2 + extraWaitTime], useCores: true, allowPartial: true },
     ], servers, allocations)
     const lastBatchWasLaunched = allScriptsAllocated(newAllocations)
-    if (!lastBatchWasLaunched && !killLowEffScripts(target.efficiency * 0.75)) {
+    if (!lastBatchWasLaunched) {
+      if (killLowEffScripts(target.efficiency)) {
+        continue
+      }
       break
     }
     mergeAllocations(allocations, newAllocations)
@@ -141,20 +147,29 @@ function hackServer(ns: NS, target: HackAnalyzeResult, servers: string[], killLo
   // })
 
   const pids = runAllocatedScripts(ns, allocations)
+
+  if (pids.length === 0 && prepareType === "already") {
+    const newThreads = Math.floor(hackThreads * 0.5)
+    if (newThreads > 0) {
+      const lowerTarget = calcEfficiency(ns, target.hostname, newThreads)
+      return hackServer(ns, lowerTarget, servers, killLowEffScripts)
+    }
+  }
+
+
   const batchPids = splitPidsByBatch(pids, allocations, prepareOutput)
 
-  const totalThreads = (hackThreads + weakThreads1 + growThreads + weakThreads2) * batchesLaunched
+  const prepareThreads = prepareOutput.threadsUsed.reduce((acc, val) => acc + val, 0)
+  const totalThreads = prepareThreads + (hackThreads + weakThreads1 + growThreads + weakThreads2) * batchesLaunched
   const totalHackedMoney = hackedMoney * batchesLaunched
-  const threadEfficiency = (totalHackedMoney) / totalThreads
-  const timeEfficiency = totalHackedMoney / (totalTime / 1000)
+  const threadEfficiency = totalHackedMoney > 0 ? (totalHackedMoney) / totalThreads : 0
+  const timeEfficiency = totalHackedMoney > 0 ? totalHackedMoney / (totalTime / 1000) : 0
 
-  const efficiency = threadEfficiency / (totalTime / 1000)
+  const efficiency = threadEfficiency ? threadEfficiency / (totalTime / 1000) : 0
 
-  // if (prepareType !== "already") {
-  //   ns.print(`SUCCESS: Prepared server ${target} (${prepareType}), but couldn't launch any batches.`)
-  // } else {
-  ns.print(`SUCCESS: Launched ${String(batchesLaunched).padStart(6, ' ')} batches (${String(totalThreads).padStart(8, ' ')} threads) on ${target.hostname.padStart(18, ' ')} of ${String(hackThreads).padStart(3, ' ')}, ${String(weakThreads1).padStart(3, ' ')}, ${String(growThreads).padStart(3, ' ')}, ${String(weakThreads2).padStart(3, ' ')}, ${ns.tFormat(totalTime).padStart(21, ' ')}, ${ns.formatNumber(totalHackedMoney, 0).padStart(4, ' ')}$. Eff: ${ns.formatNumber(threadEfficiency, 0).padStart(4, ' ')} $/th, ${ns.formatNumber(timeEfficiency, 0).padStart(4, ' ')} $/s., ${ns.formatNumber(efficiency, 0).padStart(4, ' ')} $/th/s.`)
-  // }
+  if (batchesLaunched > 0) {
+    ns.print(`SUCCESS: Launched ${String(batchesLaunched).padStart(6, ' ')} batches (${String(totalThreads).padStart(8, ' ')} threads) on ${target.hostname.padStart(18, ' ')} of ${String(hackThreads).padStart(3, ' ')}, ${String(weakThreads1).padStart(3, ' ')}, ${String(growThreads).padStart(3, ' ')}, ${String(weakThreads2).padStart(3, ' ')}, ${ns.tFormat(totalTime).padStart(21, ' ')}, ${ns.formatNumber(totalHackedMoney, 0).padStart(4, ' ')}$. Eff: ${ns.formatNumber(threadEfficiency, 0).padStart(4, ' ')} $/th, ${ns.formatNumber(timeEfficiency, 0).padStart(4, ' ')} $/s., ${ns.formatNumber(efficiency, 0).padStart(4, ' ')} $/th/s.`)
+  }
 
   return {
     totalTime,
@@ -162,6 +177,7 @@ function hackServer(ns: NS, target: HackAnalyzeResult, servers: string[], killLo
     totalHackedMoney,
     batchesLaunched,
     batchPids,
+    totalThreads,
     threadEfficiency,
     timeEfficiency,
     efficiency,

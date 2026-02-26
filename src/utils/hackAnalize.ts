@@ -50,8 +50,7 @@ const emptyHackAnalyzeResult: HackAnalyzeResult = {
 
 // The main purpose of this function is to optimize targetMoneyToHackPercentage to get the best efficiency
 export function hackAnalyze(ns: NS, hostname: string): HackAnalyzeResult {
-  let bestResult = calcEfficiency(ns, hostname, 30)
-  const initialResult = bestResult
+  let bestResult = calcEfficiency(ns, hostname, 1)
 
   // Try different targetMoneyToHackPercentage values to see if we can get better efficiency
   for (let numHackThreads = 1; numHackThreads <= 500; numHackThreads += 1) {
@@ -59,7 +58,7 @@ export function hackAnalyze(ns: NS, hostname: string): HackAnalyzeResult {
     if (result.efficiency > bestResult.efficiency) {
       bestResult = result
     }
-    if (result.efficiency < initialResult.efficiency * 0.9) {
+    if (result.efficiency < bestResult.efficiency * 0.9) {
       // If the efficiency drops significantly, we can stop trying higher percentages
       break
     }

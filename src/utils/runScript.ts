@@ -187,6 +187,15 @@ export function runSomewhereUnique(ns: NS, scriptName: string, serverHostnames: 
   if (isRunningSomewhere) {
     return
   }
+  // If there is a lot of space on home, just run it there
+  const homeServer = ns.getServer("home")
+  if (homeServer.maxRam - homeServer.ramUsed - ramReservation(homeServer) >= ns.getScriptRam(scriptName) * 5) {
+    const pid = ns.exec(scriptName, "home", 1)
+    if (pid === 0) {
+      ns.tprint(`${CYAN}Failed to run script ${scriptName} on home with 1 thread, Av RAM: ${homeServer.maxRam - homeServer.ramUsed} Req RAM: ${ns.getScriptRam(scriptName)}${RESET}`)
+    }
+    return
+  }
   const allocation = scriptAllocator(ns, [{ script: scriptName, args: [], threads: 1, useCores: false, allowPartial: false, temporary: false }], serverHostnames)
   if (allocation.allocations.length > 0 && allocation.allocations[0].servers.length > 0) {
     runAllocatedScripts(ns, allocation)

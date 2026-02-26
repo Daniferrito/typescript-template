@@ -2,7 +2,9 @@ import { NS } from "@ns";
 import { getAugmentationSource, getBuyableAugmentations, sortAugmentations } from "./utils/augHandling";
 
 export async function main(ns: NS): Promise<void> {
-  // ns.disableLog("ALL")
+  ns.disableLog("ALL")
+  ns.enableLog("singularity.purchaseAugmentation")
+  ns.enableLog("singularity.donateToFaction")
   ns.clearLog()
 
   // If there are any factions with 150+ favor that have augs we dont have yet, and that are not on the getBuyableAugmentations list, donate to them until we can buy those augs
@@ -17,6 +19,7 @@ export async function main(ns: NS): Promise<void> {
     const donateableAugmentations = unownedAugmentations.filter(a => !baseBuyableAugmentations.includes(a))
     if (donateableAugmentations.length >= 0) {
       ns.singularity.joinFaction(faction)
+      await ns.sleep(200)
     }
     for (const aug of donateableAugmentations) {
       const currentRep = ns.singularity.getFactionRep(faction)

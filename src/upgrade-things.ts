@@ -7,6 +7,6 @@ export async function main(ns: NS): Promise<void> {
     upgradeHome(ns)
     buyPrograms(ns)
     buyOrUpgradeServers(ns)
-    await ns.sleep(60 * 1000)
+    await ns.sleep(10 * 1000)
   }
 }
