@@ -114,7 +114,7 @@ function hackServer(ns: NS, target: HackAnalyzeResult, servers: string[], killLo
 
   const allocations = prepareOutput.allocations
 
-  while (/*extraWaitTime + minWaitTime < firstFinishTime &&*/ allScriptsAllocated(allocations) && prepareType !== "partial") {
+  while (extraWaitTime < firstFinishTime && /*allScriptsAllocated(allocations) &&*/ prepareType !== "partial") {
 
     const newAllocations = scriptAllocator(ns, [
       { script: HACK_SCRIPT, threads: hackThreads, args: [target.hostname, hackWaitTime + extraWaitTime], useCores: false, allowPartial: false },
@@ -127,6 +127,7 @@ function hackServer(ns: NS, target: HackAnalyzeResult, servers: string[], killLo
       if (killLowEffScripts(target.efficiency)) {
         continue
       }
+      // ns.print(`Not enough resources to launch the next batch on ${target.hostname}`)
       break
     }
     mergeAllocations(allocations, newAllocations)

@@ -40,7 +40,7 @@ export function mergeAllocations(alloc1: AllocatorOutput, alloc2: AllocatorOutpu
   for (const serverContainer of alloc2.servers) {
     const existingServer = mergedServers.find(s => s.server.hostname === serverContainer.server.hostname)
     if (existingServer) {
-      existingServer.prevReservedRam += serverContainer.prevReservedRam
+      existingServer.prevReservedRam = Math.max(existingServer.prevReservedRam, serverContainer.prevReservedRam)
     } else {
       mergedServers.push(serverContainer)
     }
@@ -95,7 +95,7 @@ export function scriptAllocator(ns: NS, scripts: RunScriptOptions[], serverHostn
         }
       } else if (availableRam >= scriptRams[i] * adjustThreadsForCores(remainingThreadsToSchedule, server.cpuCores, scripts[i].useCores)) {
         serversToRunOn[i] = [{ hostname: server.hostname, threads: scripts[i].threads }]
-        serverContainer.prevReservedRam += (scriptRams[i] * adjustThreadsForCores(remainingThreadsToSchedule, server.cpuCores, scripts[i].useCores))
+        serverContainer.prevReservedRam += adjustThreadsForCores(remainingThreadsToSchedule, server.cpuCores, scripts[i].useCores) * scriptRams[i]
       }
     }
   }

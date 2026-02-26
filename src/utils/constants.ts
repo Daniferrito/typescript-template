@@ -11,4 +11,4 @@ export const targetMoneyToHackPercentage = 0.03
 
 // How much time to wait between script finishes
 // This should be at least 20ms
-export const waitTimeMs = 50
+export const waitTimeMs = 30
