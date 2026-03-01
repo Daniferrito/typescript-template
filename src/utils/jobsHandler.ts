@@ -25,6 +25,7 @@ export async function upgradeJobs(ns: NS): Promise<void> {
       }
     }
     if (bestOption !== currentPosition) {
+      ns.print(`Applying for a new position in ${companyName}, from ${currentPosition.name} to ${bestOption.name}...`)
       ns.singularity.applyToCompany(companyName, bestOption.field)
     }
   })

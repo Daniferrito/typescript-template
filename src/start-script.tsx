@@ -48,6 +48,8 @@ async function startupScripts(ns: NS): Promise<void> {
   runSomewhereUnique(ns, "hacknet-improve.js", servers)
   runSomewhereUnique(ns, "join-factions-jobs.js", servers)
   runSomewhereUnique(ns, "change-activity.js", servers)
+  runSomewhereUnique(ns, "buy-augs.js", servers)
+  runSomewhereUnique(ns, "prestige.js", servers)
   const homeServer = ns.getServer("home")
   if (!(homeServer.maxRam >= 2 ** 8)) {
     return;
@@ -61,7 +63,7 @@ async function startupScripts(ns: NS): Promise<void> {
 
 async function preCycleUpgrade(ns: NS): Promise<string[]> {
   while (ns.singularity.upgradeHomeRam()) {
-    // Repeat until we can't upgrade anymore
+    startupScripts(ns)
   }
   return scanServers(ns).hackedServers
 }

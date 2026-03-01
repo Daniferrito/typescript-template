@@ -107,7 +107,7 @@ export function scriptAllocator(ns: NS, scripts: RunScriptOptions[], serverHostn
 }
 
 function ramReservation(server: Server): number {
-  return (server.hostname === "home" ? GB_FOR_HOME : 0)
+  return (server.hostname === "home" && server.maxRam >= 128 ? GB_FOR_HOME : 0)
 }
 
 export function allScriptsAllocated(scripts: AllocatorOutput): boolean {

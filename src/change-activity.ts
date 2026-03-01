@@ -1,5 +1,5 @@
 import { NS } from "@ns";
-import { companyFactionCompanies, companyFactions, hasRemainingAugmentations, shouldJoinFaction } from "./utils/factionHandling";
+import { companyFactionCompanies, companyFactions, factionCompanies, hasRemainingAugmentations, shouldJoinFaction } from "./utils/factionHandling";
 import { CityName, CompanyName, FactionName, UniversityClassType, UniversityLocationName } from "./utils/enums";
 
 export async function main(ns: NS): Promise<void> {
@@ -25,7 +25,7 @@ export async function main(ns: NS): Promise<void> {
       continue
     }
     // Work for a company that we are in and that has a faction with augmentations we dont have yet
-    const company = Object.keys(player.jobs).find(company => ns.singularity.getCompanyRep(company as CompanyName) < 400_000)
+    const company = Object.keys(player.jobs).find(company => !player.factions.includes(factionCompanies[company as CompanyName] ?? "") && hasRemainingAugmentations(ns, factionCompanies[company as CompanyName] ?? "") && ns.singularity.checkFactionInvitations().includes(factionCompanies[company as CompanyName] ?? ""))
     if (company) {
       ns.singularity.workForCompany(company as CompanyName, !hasNeuroReceptorManager)
       continue

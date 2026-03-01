@@ -3,10 +3,23 @@ import { getAugmentationSource, getBuyableAugmentations, sortAugmentations } fro
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL")
-  ns.enableLog("singularity.purchaseAugmentation")
-  ns.enableLog("singularity.donateToFaction")
+  // ns.enableLog("singularity.purchaseAugmentation")
+  // ns.enableLog("singularity.donateToFaction")
   ns.clearLog()
 
+  for (; ;) {
+    const [numOfBuyableAugs, numOfNFGs] = countPurchaseableAugs(ns)
+    const numOfNonNFGAugs = numOfBuyableAugs - numOfNFGs
+    ns.print(`You can currently buy ${numOfBuyableAugs} augmentations (${numOfNonNFGAugs} non-NFGs and ${numOfNFGs} NFGs) with your current money and faction reputations (including donations)`)
+    if (numOfNonNFGAugs >= 5) {
+      await buyAllAugmentations(ns)
+      ns.singularity.installAugmentations("start-script.js")
+    }
+    await ns.sleep(60 * 1000)
+  }
+}
+
+async function buyAllAugmentations(ns: NS) {
   // If there are any factions with 150+ favor that have augs we dont have yet, and that are not on the getBuyableAugmentations list, donate to them until we can buy those augs
   const baseBuyableAugmentations = getBuyableAugmentations(ns)
   const factions = ns.singularity.checkFactionInvitations().concat(ns.getPlayer().factions)
@@ -68,4 +81,77 @@ export async function main(ns: NS): Promise<void> {
       break
     }
   }
+}
+
+function countPurchaseableAugs(ns: NS): [number, number] {
+  // Simulate the process of buying augmentations and keep track of spent money to see how many augmentations we can buy with the current money
+  // Each purchased augmentation increases the price of the next one by 1.9x
+
+  const player = ns.getPlayer()
+
+  const buyableAugmentations = getBuyableAugmentations(ns)
+  let money = ns.getServerMoneyAvailable("home")
+  let count = 0
+  const sources = player.factions.concat(ns.singularity.checkFactionInvitations()).map(f => ({
+    faction: f,
+    favor: ns.singularity.getFactionFavor(f),
+    rep: ns.singularity.getFactionRep(f),
+    donatedMoney: 0,
+  }))
+
+  for (const aug of buyableAugmentations) {
+    const augSources = getAugmentationSource(ns, aug)
+    if (augSources.every(s => s.reason === "150+ favor")) {
+      const faction = sources.filter(s => s.faction === augSources[0].faction).sort((a, b) => b.rep - a.rep)[0]
+      const reqRepGain = ns.singularity.getAugmentationRepReq(aug) - faction.rep
+      if (reqRepGain > 0) {
+        const donation = ns.formulas.reputation.donationForRep(reqRepGain, ns.getPlayer())
+        if (money < donation) {
+          break
+        }
+        faction.donatedMoney += donation
+        money -= donation
+        faction.rep += reqRepGain
+      }
+    }
+    const price = ns.singularity.getAugmentationPrice(aug) * (1.9 ** count)
+    if (money < price) {
+      break
+    }
+    money -= price
+    count++
+  }
+  let nfgBought = 0
+
+  const higherRepFactionWith150Favor = sources
+    .filter(s => s.favor >= 150)
+    .sort((a, b) => b.rep - a.rep)[0]
+  const higherRepFaction = sources.filter(s => s.rep > 0)
+    .sort((a, b) => b.rep - a.rep)[0]
+  if (!higherRepFaction) {
+    return [count, nfgBought]
+  }
+  for (; ;) {
+    // Buy as many NFG as we can with the remaining money, donating if needed
+    const nfgPrice = ns.singularity.getAugmentationPrice("NeuroFlux Governor") * (1.9 ** count) * (1.14 ** nfgBought)
+    const nfgRepReq = ns.singularity.getAugmentationRepReq("NeuroFlux Governor") * (1.14 ** nfgBought)
+    const repReqGain = nfgRepReq - (higherRepFactionWith150Favor ?? higherRepFaction).rep
+    if (repReqGain > 0 && higherRepFactionWith150Favor) {
+      const donation = ns.formulas.reputation.donationForRep(repReqGain, ns.getPlayer())
+      if (money < donation) {
+        break
+      }
+      money -= donation
+      higherRepFactionWith150Favor.donatedMoney += donation
+      higherRepFactionWith150Favor.rep += repReqGain
+    }
+    if (money < nfgPrice || (higherRepFactionWith150Favor ?? higherRepFaction).rep < nfgRepReq) {
+      break
+    }
+    money -= nfgPrice
+    nfgBought++
+    count++
+  }
+
+  return [count, nfgBought]
 }
