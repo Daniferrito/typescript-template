@@ -104,11 +104,11 @@ export function calcEfficiency(ns: NS, serverName: string, hackThreads: number):
   // const hackedMoney = Math.min(hackThreads * calculatePercentMoneyHacked(ns, player, server) * maxMoney, maxMoney)
   const hackedMoney = Math.min(hackThreads * ns.formulas.hacking.hackPercent(server, player) * maxMoney, maxMoney)
   server.moneyAvailable = Math.max(0, maxMoney - hackedMoney) // simulate the effect of the hack for the grow thread calculation
-  // const growThreads = ns.formulas.hacking.growThreads(server, player, maxMoney)
+  const growThreads = ns.formulas.hacking.growThreads(server, player, maxMoney)
   // const growThreads = hasFormulas ?
   //   ns.formulas.hacking.growThreads(server, player, maxMoney) :
   //   Math.ceil(ns.growthAnalyze(serverName, maxMoney / hackedMoney))
-  const growThreads = numCycleForGrowthCorrected(ns, server, maxMoney, server.moneyAvailable, 1, player)
+  // const growThreads = numCycleForGrowthCorrected(ns, server, maxMoney, server.moneyAvailable, 1, player)
   const weakThreads2 = Math.ceil((2 * 0.002 * growThreads) / 0.05)
 
   const hackWaitTime = Math.max(0, Math.max(weakTime, growTime) - hackTime)

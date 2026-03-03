@@ -151,7 +151,8 @@ export function hasRemainingAugmentations(ns: NS, faction: string): boolean {
 function otherJoinedFactionHasAugmentation(ns: NS, augmentation: string, faction: string): boolean {
   const factions = ns.singularity.getAugmentationFactions(augmentation)
   const player = ns.getPlayer()
-  return factions.some(f => f !== faction && (player.factions.includes(f) || hackingFactions.includes(f as FactionName)))
+  const gang = ns.gang.getGangInformation()
+  return factions.some(f => f !== faction && f !== gang.faction && (player.factions.includes(f) || hackingFactions.includes(f as FactionName)))
 }
 
 // Returns true if the augmentation has prerequisites that we dont have, and that no other faction we are in has either, and that the passed faction itself doesnt have either
@@ -176,10 +177,9 @@ function factionHas150Favor(ns: NS, faction: string): boolean {
 }
 
 export function shouldJoinFaction(ns: NS, faction: string): boolean {
-  // // Dont join factions that have enemies, as we will never do anything with those
-  // if (ns.singularity.getFactionEnemies(faction).length > 0) {
-  //   return false
-  // }
+  if (faction === "BitRunners" && !factionHas150Favor(ns, "BitRunners")) {
+    return true
+  }
   // Dont join factions that only have augmentations that we already have, or that other factions we are in have, as we can get those from those factions instead if we want them
   if (!hasRemainingAugmentations(ns, faction)) {
     return false

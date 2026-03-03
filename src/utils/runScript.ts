@@ -16,6 +16,7 @@ function coresFormula(cores: number): number {
 }
 
 function adjustThreadsForCores(threads: number, cores: number, useCores = false): number {
+  return threads
   if (!useCores) {
     return threads
   }

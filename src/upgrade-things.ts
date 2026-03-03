@@ -4,7 +4,7 @@ import { buyPrograms, buyOrUpgradeServers, upgradeHome } from "./utils/upgrading
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL")
   for (; ;) {
-    upgradeHome(ns)
+    // upgradeHome(ns)
     buyPrograms(ns)
     buyOrUpgradeServers(ns)
     await ns.sleep(10 * 1000)

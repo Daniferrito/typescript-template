@@ -48,6 +48,7 @@ async function startupScripts(ns: NS): Promise<void> {
   runSomewhereUnique(ns, "hacknet-improve.js", servers)
   runSomewhereUnique(ns, "join-factions-jobs.js", servers)
   runSomewhereUnique(ns, "change-activity.js", servers)
+  runSomewhereUnique(ns, "gang-handler.js", servers)
   runSomewhereUnique(ns, "buy-augs.js", servers)
   runSomewhereUnique(ns, "prestige.js", servers)
   const homeServer = ns.getServer("home")
@@ -116,12 +117,15 @@ async function multiHack(ns: NS, fixedTargets?: string[]): Promise<never> {
   timers.splice(0, timers.length) // clear timers
   maxEff = 0
   for (; ;) {
-    maxEff *= 0.95
+    maxEff *= 0.99
+    if (timers.length === 0) {
+      maxEff = 0
+    }
     const servers = await preCycleUpgrade(ns)
     const targets = (fixedTargets && fixedTargets.length > 0) ? fixedTargets : servers
     // Get first target that does not have a batch running
     const filteredTargets = targets.filter(t => !timers.some(timer => timer.hostname === t))
-    const sortedTargets = calcSortedServerToHackRaw(ns, filteredTargets).filter(t => t.efficiency > maxEff * 0.01)
+    const sortedTargets = calcSortedServerToHackRaw(ns, filteredTargets).filter(t => t.efficiency > maxEff * 0.1)
     maxEff = Math.max(maxEff, sortedTargets[0]?.efficiency ?? 0)
     if (sortedTargets.length) {
       // let couldStartBatch = false
