@@ -55,6 +55,8 @@ export const locationFactions = {
 
 export const companyFactions = Object.keys(companyFactionCompanies) as FactionName[]
 
+export const ALL_FACTIONS = Object.values(FactionName) as FactionName[]
+
 export async function joinFactions(ns: NS): Promise<boolean> {
   let hadChanges = false;
   await backdoorFactionServers(ns)
@@ -151,8 +153,7 @@ export function hasRemainingAugmentations(ns: NS, faction: string): boolean {
 function otherJoinedFactionHasAugmentation(ns: NS, augmentation: string, faction: string): boolean {
   const factions = ns.singularity.getAugmentationFactions(augmentation)
   const player = ns.getPlayer()
-  const gang = ns.gang.getGangInformation()
-  return factions.some(f => f !== faction && f !== gang.faction && (player.factions.includes(f) || hackingFactions.includes(f as FactionName)))
+  return factions.some(f => f !== faction && (player.factions.includes(f) || hackingFactions.includes(f as FactionName)))
 }
 
 // Returns true if the augmentation has prerequisites that we dont have, and that no other faction we are in has either, and that the passed faction itself doesnt have either
@@ -177,7 +178,7 @@ function factionHas150Favor(ns: NS, faction: string): boolean {
 }
 
 export function shouldJoinFaction(ns: NS, faction: string): boolean {
-  if (faction === "BitRunners" && !factionHas150Favor(ns, "BitRunners")) {
+  if (faction === "CyberSec" && !factionHas150Favor(ns, "CyberSec")) {
     return true
   }
   // Dont join factions that only have augmentations that we already have, or that other factions we are in have, as we can get those from those factions instead if we want them

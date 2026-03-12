@@ -8,6 +8,8 @@ import { scanServers } from './utils/scan-servers';
 import { runSomewhereUnique } from './utils/runScript';
 import { formatTimeShort } from './utils/formatting';
 import { HackAnalyzeResult } from './utils/hackAnalize';
+import trainHacking from './utils/trainHacking';
+import { buyOrUpgradeServers, buyPrograms, upgradeHome } from './utils/upgradingThings';
 
 const doc = eval("document") as Document
 
@@ -25,7 +27,7 @@ export async function main(_ns: NS): Promise<void> {
 
   ns.ui.openTail()
   ns.ui.resizeTail(2000, 400)
-  ns.ui.moveTail(550, 820)
+  ns.ui.moveTail(300, 820)
 
   const overviewExtraHook = doc.getElementById('overview-extra-hook-0')
   if (overviewExtraHook && overviewExtraHook.parentElement) {
@@ -43,12 +45,11 @@ export async function main(_ns: NS): Promise<void> {
 async function startupScripts(ns: NS): Promise<void> {
   const servers = scanServers(ns).hackedServers
   copyEverythingEverywhere(ns, servers)
-  runSomewhereUnique(ns, "upgrade-things.js", servers)
   runSomewhereUnique(ns, "solve-coding-contracts.js", servers)
-  runSomewhereUnique(ns, "hacknet-improve.js", servers)
-  runSomewhereUnique(ns, "join-factions-jobs.js", servers)
   runSomewhereUnique(ns, "change-activity.js", servers)
   runSomewhereUnique(ns, "gang-handler.js", servers)
+  runSomewhereUnique(ns, "hacknet-improve.js", servers)
+  runSomewhereUnique(ns, "join-factions-jobs.js", servers)
   runSomewhereUnique(ns, "buy-augs.js", servers)
   runSomewhereUnique(ns, "prestige.js", servers)
   const homeServer = ns.getServer("home")
@@ -63,10 +64,15 @@ async function startupScripts(ns: NS): Promise<void> {
 }
 
 async function preCycleUpgrade(ns: NS): Promise<string[]> {
-  while (ns.singularity.upgradeHomeRam()) {
+  const upgradedHome = upgradeHome(ns)
+  const boughtPrograms = buyPrograms(ns)
+  const upgradedServers = buyOrUpgradeServers(ns)
+  const servers = scanServers(ns).hackedServers
+  if (upgradedHome || boughtPrograms || upgradedServers) {
+    ns.print(`INFO   : Upgraded things before cycle: ${upgradedHome ? "home" : ""} ${boughtPrograms ? "programs" : ""} ${upgradedServers ? "servers" : ""}`)
     startupScripts(ns)
   }
-  return scanServers(ns).hackedServers
+  return servers
 }
 
 interface Timer {
@@ -82,9 +88,11 @@ const timers: Timer[] = []
 
 function killLowEffScriptsGen(timers: Timer[]): (efficiencyThreshold: number) => boolean {
   return (efficiencyThreshold: number): boolean => {
+    // ns.print(`Checking for batches to kill with efficiency threshold ${ns.formatNumber(efficiencyThreshold, 0)}$/th/s ( ${timers.length} timers)`)
     const now = Date.now()
     for (const timer of timers) {
-      if (timer.timeStartsFinishing > now) {
+      if (timer.timeStartsFinishing < now || timer.output.batchPids.length === 0) {
+        // ns.print(`Skipping timer on ${timer.hostname} because it has started to finish`)
         continue
       }
       const totalTime = timer.timeFinishes - now
@@ -95,14 +103,16 @@ function killLowEffScriptsGen(timers: Timer[]): (efficiencyThreshold: number) =>
 
       const efficiency = threadEfficiency / (totalTime / 1000)
       if (efficiency < efficiencyThreshold && !timer.killed) {
-        ns.print(`WARN   : Killing batch on ${timer.hostname} with efficiency ${ns.formatNumber(efficiency, 0)}$/th/s, which is below the threshold of ${ns.formatNumber(efficiencyThreshold, 2)}$/th/s`)
+        if (efficiency > 0) {
+          ns.print(`WARN   : Killing batch on ${timer.hostname} with efficiency ${ns.formatNumber(efficiency, 0)}$/th/s, which is below the threshold of ${ns.formatNumber(efficiencyThreshold, 0)}$/th/s`)
+        }
         for (const batch of timer.output.batchPids) {
           for (const pid of batch) {
             ns.kill(pid)
           }
         }
         timer.killed = true
-        if (timer.output.prepared === "already") {
+        if (timer.output.prepared === "already" || timer.output.prepared === "no") {
           // Remove the timer immediately if the server was already prepared
           timers.splice(timers.indexOf(timer), 1)
         }
@@ -116,8 +126,13 @@ let maxEff = 0
 async function multiHack(ns: NS, fixedTargets?: string[]): Promise<never> {
   timers.splice(0, timers.length) // clear timers
   maxEff = 0
+  let timeLastDecrease = Date.now()
   for (; ;) {
-    maxEff *= 0.99
+    const now = Date.now()
+    while (now - timeLastDecrease > 5 * 1000) {
+      maxEff *= 0.99
+      timeLastDecrease += 5 * 1000
+    }
     if (timers.length === 0) {
       maxEff = 0
     }
@@ -134,9 +149,8 @@ async function multiHack(ns: NS, fixedTargets?: string[]): Promise<never> {
           break
         }
         const output = hackServer(ns, target, servers, killLowEffScriptsGen(timers))
-        // ns.print(`INFO   : Hack attempt on ${target} finished. Efficiency: ${ns.formatNumber(output.efficiency, 0)}$/th/s. Prepared: ${output.prepared}. Time until first batch can finish: ${ns.tFormat(output.firstFinishTime)}. Total time until all batches finish: ${ns.tFormat(output.totalTime)}.`)
+        // ns.print(`INFO   : Hack attempt on ${target.hostname} finished. Efficiency: ${ns.formatNumber(output.efficiency, 0)}$/th/s. Prepared: ${output.prepared}. Time until first batch can finish: ${ns.tFormat(output.firstFinishTime)}. Total time until all batches finish: ${ns.tFormat(output.totalTime)}.`)
         if (output.totalTime > 0) {
-          const now = Date.now()
           timers.push({
             hostname: target.hostname,
             timeStarted: now,
@@ -150,6 +164,20 @@ async function multiHack(ns: NS, fixedTargets?: string[]): Promise<never> {
         }
       }
     }
+    const trainingOutput = trainHacking(ns, servers)
+    if (trainingOutput.totalTime > 0) {
+      timers.push({
+        hostname: `training (${trainingOutput.hostname})`,
+        timeStarted: now,
+        timeFinishes: now + trainingOutput.totalTime,
+        timeStartsFinishing: now + trainingOutput.firstFinishTime,
+        input: {} as HackAnalyzeResult,
+        output: trainingOutput,
+        killed: false
+      })
+      // couldStartBatch = true
+    }
+
     await waitForNextTimer(ns, timers)
 
   }
@@ -180,9 +208,11 @@ function TimerComponent() {
     return () => clearInterval(interval)
   }, [])
 
+  const player = ns.getPlayer()
   return (
     // <th colSpan={2}>
     <>
+      <p>Karma: {ns.formatNumber(player.karma, 2)}, Kills: {ns.formatNumber(player.numPeopleKilled, 0)}</p>
       <p>Total: {ns.formatNumber(timers.reduce((acc, timer) => acc + timer.output.timeEfficiency, 0), 0)}$/s (${ns.formatNumber(maxEff, 0)}$/th/s)</p>
       <table style={{ width: "100%" }}>
         <thead><tr>

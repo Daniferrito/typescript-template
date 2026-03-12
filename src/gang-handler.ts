@@ -2,6 +2,10 @@ import { GangGenInfo, GangMemberAscension, GangMemberInfo, GangTaskStats, NS } f
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL")
+  while (!ns.gang.inGang() && !ns.gang.createGang("Slum Snakes")) {
+    ns.singularity.joinFaction("Slum Snakes")
+    await ns.sleep(60 * 1000)
+  }
 
   let ticksSinceLastTerritoryChange = 0;
   let previousTicksSinceLastTerritoryChange = 0;
@@ -9,10 +13,6 @@ export async function main(ns: NS): Promise<void> {
   let lastPower = ns.gang.getGangInformation().power
 
   for (; ;) {
-    if (!ns.gang.inGang() && !ns.gang.createGang("Slum Snakes")) {
-      await ns.sleep(60 * 1000)
-      continue
-    }
 
     const gangInfo = ns.gang.getGangInformation()
     const territory = gangInfo.territory
@@ -27,13 +27,17 @@ export async function main(ns: NS): Promise<void> {
     const members = ns.gang.getMemberNames()
     const equipment = ns.gang.getEquipmentNames()
     for (const eq of equipment) {
-      for (const member of members) {
-        if (ns.gang.purchaseEquipment(member, eq)) {
-          ns.print(`Purchased ${eq} for ${member}`)
+      if (ns.gang.getEquipmentType(eq) === "Augmentation" || ns.gang.getEquipmentCost(eq) < ns.getServerMoneyAvailable("home") * 0.01) {
+        for (const member of members) {
+          if (ns.gang.purchaseEquipment(member, eq)) {
+            ns.print(`Purchased ${eq} for ${member}`)
+          }
         }
       }
     }
 
+    // Do not ascend until we have all 12 members
+    // if (members.length === 12) {
     // Ascend members that can be ascended
     for (const member of members) {
       const installResults = ns.gang.getInstallResult(member)
@@ -51,11 +55,14 @@ export async function main(ns: NS): Promise<void> {
         }
       }
     }
+    // }
 
     if (lastTerritory !== territory || lastPower !== power) {
       // A tick has passed, reset counter
-      ns.print(`Power changed from ${lastPower.toFixed(4)} to ${power.toFixed(4)} after ${ticksSinceLastTerritoryChange} (expected: ${previousTicksSinceLastTerritoryChange}) ticks (fist member activity: ${ns.gang.getMemberInformation(members[0]).task})`)
-      previousTicksSinceLastTerritoryChange = ticksSinceLastTerritoryChange
+      if (previousTicksSinceLastTerritoryChange != ticksSinceLastTerritoryChange) {
+        ns.print(`Power changed from ${lastPower.toFixed(4)} to ${power.toFixed(4)} after ${ticksSinceLastTerritoryChange} (expected: ${previousTicksSinceLastTerritoryChange}) ticks (fist member activity: ${ns.gang.getMemberInformation(members[0]).task})`)
+      }
+      previousTicksSinceLastTerritoryChange = Math.max(ticksSinceLastTerritoryChange, ns.gang.getBonusTime() > 0 ? 3 : 9)
       ticksSinceLastTerritoryChange = 0
     } else {
       ticksSinceLastTerritoryChange++
@@ -63,12 +70,15 @@ export async function main(ns: NS): Promise<void> {
     lastPower = power
     lastTerritory = territory
 
-    const chancesToWinClash = Object.entries(ns.gang.getOtherGangInformation()).map(([name]) => ns.gang.getChanceToWinClash(name))
+    const chancesToWinClash = Object.entries(ns.gang.getOtherGangInformation())
+      .filter(([name, gangObject]) => name != gangInfo.faction && gangObject.territory > 0)
+      .map(([name]) => ns.gang.getChanceToWinClash(name))
     const minChangeToWinClash = chancesToWinClash.reduce((acc, val) => Math.min(acc, val), 1)
-    ns.gang.setTerritoryWarfare(minChangeToWinClash > 0.5 && territory < 1)
+    ns.gang.setTerritoryWarfare(minChangeToWinClash > 0.6 && territory < 1)
+    // ns.print(`Territory: ${territory.toFixed(4)}, Min Win Clash Chance: ${minChangeToWinClash.toFixed(4)}`)
 
     // If we have 10 or greater ticksSinceLastTerritoryChange, set them all to "Territory Warfare" to try to get more territory
-    if ((ticksSinceLastTerritoryChange >= previousTicksSinceLastTerritoryChange) && territory < 1) {
+    if ((ticksSinceLastTerritoryChange >= previousTicksSinceLastTerritoryChange) && territory < 1 && minChangeToWinClash < 0.95) {
       // ns.print(`Setting all members to Territory Warfare to increase territory (current: ${territory.toFixed(4)}, clash chance: ${gangInfo.territoryClashChance.toFixed(4)})`)
       for (const member of members) {
         ns.gang.setMemberTask(member, "Territory Warfare")
@@ -76,12 +86,35 @@ export async function main(ns: NS): Promise<void> {
     } else {
       // Assign tasks to members
       const tasks = ns.gang.getTaskNames().map(t => (ns.gang.getTaskStats(t)))
+      let someoneRespecting = false
       const newGangInfo = { ...gangInfo }
       for (const memberIndex in members) {
         const member = members[memberIndex]
         const memberInfo = ns.gang.getMemberInformation(member)
         const taskResults = tasks.map(t => (getTaskResult(ns, memberInfo, t, gangInfo)))
 
+        if (newGangInfo.wantedLevel > 1.01 && -newGangInfo.wantedLevelGainRate < newGangInfo.wantedLevel - 1) {
+          const bestWantedTask = taskResults.filter(t => t.wanted < 0.1).sort((a, b) => a.wanted - b.wanted)[0]
+          if (bestWantedTask && bestWantedTask.wanted < 0) {
+            ns.gang.setMemberTask(member, bestWantedTask.name)
+            newGangInfo.wantedLevelGainRate += bestWantedTask.wanted
+            continue
+          }
+        }
+
+        if (territory < 1 && minChangeToWinClash < 0.7) {
+          if (isGreatestCombatMember(ns, memberInfo, members) && !someoneRespecting) {
+            const bestRespectTask = taskResults.filter(t => t.respect > 0).sort((a, b) => b.respect - a.respect)[0]
+            if (bestRespectTask && bestRespectTask.respect > 0) {
+              ns.gang.setMemberTask(member, bestRespectTask.name)
+              someoneRespecting = true
+              continue
+            }
+          }
+          const options = ["Train Combat", "Train Combat", "Train Charisma", "Train Hacking"]
+          ns.gang.setMemberTask(member, options[Math.floor(Math.random() * options.length)])
+          continue
+        }
 
         // const newGangInfo = ns.gang.getGangInformation()
         if (shouldTrainCombat(memberInfo)) {
@@ -97,28 +130,21 @@ export async function main(ns: NS): Promise<void> {
 
         // ns.print(`${newGangInfo.wantedLevel > 2}, ${-newGangInfo.wantedLevelGainRate < newGangInfo.wantedLevel}, ${-newGangInfo.wantedLevelGainRate}, ${newGangInfo.wantedLevel}`)
 
-        if (newGangInfo.wantedLevel > 2 && -newGangInfo.wantedLevelGainRate < newGangInfo.wantedLevel - 1) {
-          const bestWantedTask = taskResults.filter(t => t.wanted < 0.1).sort((a, b) => a.wanted - b.wanted)[0]
-          if (bestWantedTask && bestWantedTask.wanted < 0) {
-            ns.gang.setMemberTask(member, bestWantedTask.name)
-            newGangInfo.wantedLevelGainRate += bestWantedTask.wanted
+
+        if (gangInfo.respect < 1_000_000_000) {
+          const bestRespectTask = taskResults.filter(t => t.respect > 0).sort((a, b) => b.respect - a.respect)[0]
+          if (bestRespectTask && bestRespectTask.respect > 0) {
+            ns.gang.setMemberTask(member, bestRespectTask.name)
             continue
           }
         } else {
-          if (Number(memberIndex) % 2 === 0 && gangInfo.respect < 1_000_000_000) {
-            const bestRespectTask = taskResults.filter(t => t.respect > 0).sort((a, b) => b.respect - a.respect)[0]
-            if (bestRespectTask && bestRespectTask.respect > 0) {
-              ns.gang.setMemberTask(member, bestRespectTask.name)
-              continue
-            }
-          } else {
-            const bestMoneyTask = taskResults.filter(t => t.money > 0).sort((a, b) => b.money - a.money)[0]
-            if (bestMoneyTask && bestMoneyTask.money > 0) {
-              ns.gang.setMemberTask(member, bestMoneyTask.name)
-              continue
-            }
+          const bestMoneyTask = taskResults.filter(t => t.money > 0).sort((a, b) => b.money - a.money)[0]
+          if (bestMoneyTask && bestMoneyTask.money > 0) {
+            ns.gang.setMemberTask(member, bestMoneyTask.name)
+            continue
           }
         }
+
         // If no good task is found, just train combat
         ns.gang.setMemberTask(member, "Train Combat")
       }
@@ -165,9 +191,9 @@ function getTaskResult(ns: NS, memberInfo: GangMemberInfo, taskStats: GangTaskSt
   const wantedPenalty = calculateWantedPenalty(gang);
   const wantGain = Math.min(100, (7 * taskStats.baseWanted) / Math.pow(3 * (statWeight - 3.5 * taskStats.difficulty) * territoryMultWanted, 0.8));
   const wantedReductionFromVigilanteJustice = calculateWantedReductionFromVigilanteJustice(ns, memberInfo, gang)
-  const wantedPenalization = wantGain > 0 ? wantGain / wantedReductionFromVigilanteJustice : 1
-  const respectGain = Math.pow(11 * taskStats.baseRespect * (statWeight - 4 * taskStats.difficulty) * territoryMultRespect * wantedPenalty, territoryPenalty) / wantedPenalization;
-  const moneyGain = Math.pow(5 * taskStats.baseMoney * (statWeight - 3.2 * taskStats.difficulty) * territoryMultMoney * wantedPenalty, territoryPenalty) / wantedPenalization;
+  const wantedPenalization = wantGain > 0 ? wantedReductionFromVigilanteJustice / (wantGain + wantedReductionFromVigilanteJustice) : 1
+  const respectGain = Math.pow(11 * taskStats.baseRespect * (statWeight - 4 * taskStats.difficulty) * territoryMultRespect * wantedPenalty, territoryPenalty) * wantedPenalization;
+  const moneyGain = Math.pow(5 * taskStats.baseMoney * (statWeight - 3.2 * taskStats.difficulty) * territoryMultMoney * wantedPenalty, territoryPenalty) * wantedPenalization;
   return {
     name: taskStats.name,
     desc: taskStats.desc,
@@ -244,4 +270,17 @@ function shouldTrainHacking(memberInfo: GangMemberInfo): boolean {
   const desiredExp = baseMult * memberInfo.hack_mult * memberInfo.hack_asc_mult
 
   return memberInfo.hack_exp < desiredExp
+}
+
+function isGreatestCombatMember(ns: NS, memberInfo: GangMemberInfo, members: string[]): boolean {
+
+  const combatLevel = memberInfo.str + memberInfo.def + memberInfo.dex + memberInfo.agi
+  for (const member of members) {
+    const otherMemberInfo = ns.gang.getMemberInformation(member)
+    const otherCombatLevel = otherMemberInfo.str + otherMemberInfo.def + otherMemberInfo.dex + otherMemberInfo.agi
+    if (otherCombatLevel > combatLevel) {
+      return false
+    }
+  }
+  return true
 }

@@ -12,7 +12,7 @@ export interface PrepareServerOutput {
   threadsUsed: [number, number, number] // weakThreads1, growThreads, weakThreads2
 }
 
-function prepareServer(ns: NS, target: string, servers: string[]): PrepareServerOutput {
+function prepareServer(ns: NS, target: string, servers: string[], killLowEffScripts: (efficiencyThreshold: number) => boolean): PrepareServerOutput {
   const hasFormulas = ns.fileExists("Formulas.exe", "home")
   // if (!hasFormulas) {
   //   ns.print(`No Formulas.exe found, using backup method`)
@@ -66,32 +66,55 @@ function prepareServer(ns: NS, target: string, servers: string[]): PrepareServer
 
   if (!couldPrepare) {
     const originalThreadsWanted = [weakThreads1, growThreads, weakThreads2]
-    const partialPrepareAllocations = scriptAllocator(ns, [
-      { script: WEAK_SCRIPT, threads: weakThreads1, args: [target, weakWaitTime1], useCores: true, allowPartial: true },
-    ], servers)
+    let couldFullyWeaken = false
+    let partialPrepareAllocations: AllocatorOutput = emptyAllocatorOutput(ns, servers)
+    while (!couldFullyWeaken) {
+      partialPrepareAllocations = scriptAllocator(ns, [
+        { script: WEAK_SCRIPT, threads: weakThreads1, args: [target, weakWaitTime1], useCores: true, allowPartial: true },
+      ], servers)
+      couldFullyWeaken = allScriptsAllocated(partialPrepareAllocations)
+      if (!couldFullyWeaken) {
+        if (killLowEffScripts(0.001)) {
+          continue
+        }
+        break
+      }
+    }
 
-    const couldFullyWeaken = allScriptsAllocated(partialPrepareAllocations)
+    let missingGrowThreads = growThreads
+    let totalGrowThreadsAllocated = 0
+    let totalWeak2ThreadsAllocated = 0
+
     if (couldFullyWeaken) {
-      let canStartGrowThreads = false
-      while (!canStartGrowThreads) {
+      while (missingGrowThreads > 0 && growThreads > 0) {
         const growAndWeak2Allocations = scriptAllocator(ns, [
           { script: GROW_SCRIPT, threads: growThreads, args: [target, growWaitTime], useCores: true, allowPartial: false },
           { script: WEAK_SCRIPT, threads: weakThreads2, args: [target, weakWaitTime2], useCores: true, allowPartial: true },
         ], servers, partialPrepareAllocations)
-        canStartGrowThreads = allScriptsAllocated(growAndWeak2Allocations)
+        const canStartGrowThreads = allScriptsAllocated(growAndWeak2Allocations)
         if (canStartGrowThreads) {
           mergeAllocations(partialPrepareAllocations, growAndWeak2Allocations)
+          missingGrowThreads -= growThreads
+          totalGrowThreadsAllocated += growThreads
+          totalWeak2ThreadsAllocated += weakThreads2
+          growThreads = Math.min(growThreads, missingGrowThreads)
+          weakThreads2 = Math.ceil((2 * 0.002 * growThreads) / 0.05)
         } else {
+          if (killLowEffScripts(0.001)) {
+            continue
+          }
           growThreads = Math.floor(growThreads * 0.9) // reduce the grow threads and try again, to free up some threads for weak2
           weakThreads2 = Math.ceil((2 * 0.002 * growThreads) / 0.05)
 
-          if (growThreads < originalThreadsWanted[1] * 0.02 && weakThreads1 === 0) {
+          if (totalGrowThreadsAllocated < originalThreadsWanted[1] * 0.02 && weakThreads1 === 0 && growThreads === 0) {
             // If we cant even allocate 10% of the grow threads, it's probably not worth it to prepare this server partially, so we just skip it
-            // ns.print(`ERROR  : Could not allocate enough threads to grow server ${target} (allocated ${growThreads} / wanted ${originalThreadsWanted[1]}), skipping...`)
+            // ns.print(`ERROR  : Could not allocate enough threads to grow server ${target} (allocated ${totalGrowThreadsAllocated} / wanted ${originalThreadsWanted[1]}), skipping...`)
             return { allocations: emptyAllocatorOutput(ns, servers), totalTime: 0, minWaitTime: 0, firstFinishTime: 0, fullPrepare: false, threadsUsed: [0, 0, 0] }
           }
         }
       }
+      growThreads = totalGrowThreadsAllocated
+      weakThreads2 = totalWeak2ThreadsAllocated
     } else {
       weakThreads1 = partialPrepareAllocations.allocations.filter(a => a.script === WEAK_SCRIPT).reduce((sum, a) => sum + a.servers.reduce((s, server) => s + server.threads, 0), 0)
       growThreads = 0
@@ -119,9 +142,11 @@ function prepareServer(ns: NS, target: string, servers: string[]): PrepareServer
       return { allocations: emptyAllocatorOutput(ns, servers), totalTime: 0, minWaitTime: 0, firstFinishTime: 0, fullPrepare: false, threadsUsed: [0, 0, 0] }
     }
 
-    ns.print(`WARN   : Preparing server ${target} ${RED}(partially)${RESET}, will take approximately ${ns.tFormat(totalTime)} (${weakThreads1 + growThreads + weakThreads2} threads). (${weakThreads1}, ${growThreads}, ${weakThreads2}) Originally wanted ${originalThreadsWanted.join(", ")} threads.`)
+    const didComplete = totalGrowThreadsAllocated === originalThreadsWanted[1]
+
+    ns.print(`WARN   : Preparing server ${target} ${didComplete ? "" : `${RED}(partially)${RESET}`}, will take approximately ${ns.tFormat(totalTime)} (${weakThreads1 + growThreads + weakThreads2} threads). (${weakThreads1}, ${growThreads}, ${weakThreads2}) Originally wanted ${originalThreadsWanted.join(", ")} threads.`)
     ns.print(`WARN   : \tNeed to reduce ${ns.formatNumber(security - minSecurity)} security, and increase money by ${ns.formatPercent(growthFactor - 1)} (${ns.formatNumber(moneyAvailable)} to ${ns.formatNumber(maxMoney)}).`)
-    return { allocations: partialPrepareAllocations, totalTime, minWaitTime, firstFinishTime, fullPrepare: false, threadsUsed: [partialPrepareAllocations.allocations[0].threads, growThreads, weakThreads2] }
+    return { allocations: partialPrepareAllocations, totalTime, minWaitTime, firstFinishTime, fullPrepare: !didComplete, threadsUsed: [partialPrepareAllocations.allocations[0].threads, growThreads, weakThreads2] }
   }
 
   const totalTime = weakTime + weakWaitTime2

@@ -1,6 +1,6 @@
 
 export const HOME = "home"
-export const GB_FOR_HOME = 32
+export const GB_FOR_HOME = 64
 
 export const HACK_SCRIPT = "hack-once.js"
 export const GROW_SCRIPT = "grow-once.js"
@@ -11,4 +11,4 @@ export const targetMoneyToHackPercentage = 0.03
 
 // How much time to wait between script finishes
 // This should be at least 20ms
-export const waitTimeMs = 50
+export const waitTimeMs = 30

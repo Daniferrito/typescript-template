@@ -37,10 +37,12 @@ export function buyOrUpgradeServers(ns: NS): boolean {
 export function upgradeHome(ns: NS): boolean {
   let hadChanges = false;
   while (ns.singularity.upgradeHomeRam()) {
+    ns.print(`Upgrading home RAM to ${ns.getServerMaxRam("home")}GB...`)
     hadChanges = true;
   }
   while (ns.singularity.upgradeHomeCores()) {
-    hadChanges = true;
+    ns.print(`Upgrading home cores to ${ns.getServer("home").cpuCores}...`)
+    // hadChanges = true;
   }
 
   return hadChanges;
@@ -53,7 +55,8 @@ export function buyPrograms(ns: NS): boolean {
   }
   const programs = ns.singularity.getDarkwebPrograms();
   for (const program of programs) {
-    if (ns.singularity.purchaseProgram(program)) {
+    if (ns.singularity.getDarkwebProgramCost(program) < ns.getServerMoneyAvailable("home") && !ns.fileExists(program, "home") && ns.singularity.purchaseProgram(program)) {
+      ns.print(`Purchased program ${program} from the dark web`)
       hadChanges = true;
     }
   }

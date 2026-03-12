@@ -100,6 +100,10 @@ function countPurchaseableAugs(ns: NS): [number, number] {
   }))
 
   for (const aug of buyableAugmentations) {
+    const price = ns.singularity.getAugmentationPrice(aug) * (1.9 ** count)
+    if (money < price) {
+      continue
+    }
     const augSources = getAugmentationSource(ns, aug)
     if (augSources.every(s => s.reason === "150+ favor")) {
       const faction = sources.filter(s => s.faction === augSources[0].faction).sort((a, b) => b.rep - a.rep)[0]
@@ -113,10 +117,6 @@ function countPurchaseableAugs(ns: NS): [number, number] {
         money -= donation
         faction.rep += reqRepGain
       }
-    }
-    const price = ns.singularity.getAugmentationPrice(aug) * (1.9 ** count)
-    if (money < price) {
-      break
     }
     money -= price
     count++

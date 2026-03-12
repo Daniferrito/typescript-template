@@ -8,6 +8,6 @@ export async function main(ns: NS): Promise<void> {
   for (; ;) {
     await joinFactions(ns)
     await upgradeJobs(ns)
-    await ns.sleep(60 * 1000)
+    await ns.sleep(5 * 1000)
   }
 }

@@ -1,6 +1,6 @@
 import { NS, Server } from "@ns";
 import { GB_FOR_HOME } from "./constants";
-import { CYAN, RED, RESET } from "./colors";
+import { CYAN, RESET } from "./colors";
 
 interface RunScriptOptions {
   script: string
@@ -108,7 +108,7 @@ export function scriptAllocator(ns: NS, scripts: RunScriptOptions[], serverHostn
 }
 
 function ramReservation(server: Server): number {
-  return (server.hostname === "home" && server.maxRam >= 128 ? GB_FOR_HOME : 0)
+  return (server.hostname === "home" && server.maxRam >= 512 ? 64 : 0)
 }
 
 export function allScriptsAllocated(scripts: AllocatorOutput): boolean {
@@ -165,7 +165,8 @@ export function runAllocatedScripts(ns: NS, scriptAllocations: AllocatorOutput):
           },
           ...allocation.args)
         if (pid === 0) {
-          ns.tprint(`${CYAN}Failed to run script ${allocation.script} on server ${server.hostname} with ${threads} threads, Av RAM: ${ns.getServer(server.hostname).maxRam - ns.getServer(server.hostname).ramUsed} Req RAM: ${threads * ns.getScriptRam(allocation.script)}${RESET}`)
+          const serv = ns.getServer(server.hostname)
+          ns.tprint(`${CYAN}Failed to run script ${allocation.script} on server ${server.hostname} with ${threads} threads, Av RAM: ${serv.maxRam - serv.ramUsed} Req RAM: ${threads * ns.getScriptRam(allocation.script)}${RESET}`)
         }
         pids.push(pid)
       }
@@ -190,7 +191,7 @@ export function runSomewhereUnique(ns: NS, scriptName: string, serverHostnames: 
   }
   // If there is a lot of space on home, just run it there
   const homeServer = ns.getServer("home")
-  if (homeServer.maxRam - homeServer.ramUsed - ramReservation(homeServer) >= ns.getScriptRam(scriptName) * 5) {
+  if (homeServer.maxRam - homeServer.ramUsed /*- ramReservation(homeServer)*/ >= ns.getScriptRam(scriptName) * 5) {
     const pid = ns.exec(scriptName, "home", 1)
     if (pid === 0) {
       ns.tprint(`${CYAN}Failed to run script ${scriptName} on home with 1 thread, Av RAM: ${homeServer.maxRam - homeServer.ramUsed} Req RAM: ${ns.getScriptRam(scriptName)}${RESET}`)

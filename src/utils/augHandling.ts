@@ -2,9 +2,10 @@ import { NS } from "@ns";
 
 export function getBuyableAugmentations(ns: NS): string[] {
   const player = ns.getPlayer()
+  const gang = ns.gang.inGang() ? ns.gang.getGangInformation() : null
   const invitations = ns.singularity.checkFactionInvitations()
   const joinedFactions = player.factions
-  const factionWith150Favor = invitations.filter(f => ns.singularity.getFactionFavor(f) >= 150)
+  const factionWith150Favor = invitations.filter(f => ns.singularity.getFactionFavor(f) >= 150 && f !== gang?.faction)
   const relevantFactions = [...new Set([...joinedFactions, ...factionWith150Favor])]
   const augmentations = relevantFactions.flatMap(f =>
     ns.singularity.getAugmentationsFromFaction(f)
