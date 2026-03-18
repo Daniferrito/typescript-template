@@ -53,6 +53,15 @@ export const locationFactions = {
   "Volhaven": CityName.Volhaven,
 } satisfies Partial<Record<FactionName, CityName>>
 
+export const enemyFactions = {
+  "Sector-12": [FactionName.Volhaven, FactionName.Chongqing, FactionName.NewTokyo, FactionName.Ishima],
+  "Aevum": [FactionName.Volhaven, FactionName.Chongqing, FactionName.NewTokyo, FactionName.Ishima],
+  "Chongqing": [FactionName.Volhaven, FactionName.Sector12, FactionName.Aevum],
+  "New Tokyo": [FactionName.Volhaven, FactionName.Sector12, FactionName.Aevum],
+  "Ishima": [FactionName.Volhaven, FactionName.Sector12, FactionName.Aevum],
+  "Volhaven": [FactionName.Sector12, FactionName.Aevum, FactionName.Chongqing, FactionName.NewTokyo, FactionName.Ishima],
+} satisfies Partial<Record<FactionName, FactionName[]>>
+
 export const companyFactions = Object.keys(companyFactionCompanies) as FactionName[]
 
 export const ALL_FACTIONS = Object.values(FactionName) as FactionName[]
@@ -62,6 +71,7 @@ export async function joinFactions(ns: NS): Promise<boolean> {
   await backdoorFactionServers(ns)
   await moveToFactionsCities(ns)
   await applyToCompanyFactions(ns)
+  await joinBladeBurnerFaction(ns)
 
   const invitations = ns.singularity.checkFactionInvitations()
   for (const faction of invitations) {
@@ -107,7 +117,8 @@ async function moveToFactionsCities(ns: NS): Promise<void> {
   const joinedFactions = player.factions
   for (const faction in locationFactions) {
     const city = locationFactions[faction as keyof typeof locationFactions]
-    if ((!invitations.includes(faction) && !joinedFactions.includes(faction)) && shouldJoinFaction(ns, faction)) {
+    const enemies = enemyFactions[faction as keyof typeof enemyFactions] as FactionName[] | null
+    if ((!invitations.includes(faction) && !joinedFactions.includes(faction)) && shouldJoinFaction(ns, faction) && joinedFactions.some(f => enemies?.includes(f as FactionName))) {
       ns.singularity.travelToCity(city)
       ns.singularity.checkFactionInvitations()
       await ns.sleep(200)
@@ -146,7 +157,7 @@ export function hasRemainingAugmentations(ns: NS, faction: string): boolean {
     // Filter out augmentations that have unowned prerequisites that we dont have, and that no other faction we are in has either, and that the faction itself doesnt have either, as we wont be able to get those for a long time if we join this faction now
     .filter(a => !augmentationHasUnownedPrerequisites(ns, a, faction))
     // Filter out augmentations that we already have the rep for
-    .filter(a => ns.singularity.getAugmentationRepReq(a) > ns.singularity.getFactionRep(faction) && ns.singularity.getFactionFavor(faction) < 150)
+    .filter(a => ns.singularity.getAugmentationRepReq(a) > ns.singularity.getFactionRep(faction) && ns.singularity.getFactionFavor(faction) < ns.getBitNodeMultipliers().RepToDonateToFaction)
   return unownedAugmentations.length > 0
 }
 
@@ -174,7 +185,7 @@ function augmentationHasUnownedPrerequisites(ns: NS, augmentation: string, facti
 function factionHas150Favor(ns: NS, faction: string): boolean {
   const favor = ns.singularity.getFactionFavor(faction)
   const futureFavor = ns.singularity.getFactionFavorGain(faction)
-  return favor + futureFavor >= 150
+  return favor + futureFavor >= ns.getBitNodeMultipliers().RepToDonateToFaction
 }
 
 export function shouldJoinFaction(ns: NS, faction: string): boolean {
@@ -190,4 +201,11 @@ export function shouldJoinFaction(ns: NS, faction: string): boolean {
     return false
   }
   return true
+}
+
+function joinBladeBurnerFaction(ns: NS) {
+  if (!ns.bladeburner.inBladeburner() && !ns.bladeburner.joinBladeburnerDivision()) {
+    return
+  }
+  ns.bladeburner.joinBladeburnerFaction()
 }

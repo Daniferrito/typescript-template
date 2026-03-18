@@ -20,7 +20,7 @@ export async function main(ns: NS): Promise<void> {
 
     // Recruit members until we have the maximum
     while (ns.gang.canRecruitMember()) {
-      ns.gang.recruitMember(`M${(ns.gang.getMemberNames().length + 1).toString().padStart(2, "0")}`)
+      ns.gang.recruitMember(`M${Math.floor(Math.random() * 100).toString().padStart(2, "0")}`)
     }
 
     // Buy the best equipment for all members

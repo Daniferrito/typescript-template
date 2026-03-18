@@ -200,6 +200,9 @@ export function runSomewhereUnique(ns: NS, scriptName: string, serverHostnames: 
   }
   const allocation = scriptAllocator(ns, [{ script: scriptName, args: [], threads: 1, useCores: false, allowPartial: false, temporary: false }], serverHostnames)
   if (allocation.allocations.length > 0 && allocation.allocations[0].servers.length > 0) {
+    if (allocation.allocations[0].servers[0].hostname !== "home") {
+      ns.tprint(`Running ${scriptName} on ${allocation.allocations[0].servers[0].hostname}`)
+    }
     runAllocatedScripts(ns, allocation)
   } else {
     ns.print(`WARNING: Failed to run script ${scriptName} (${ns.getScriptRam(scriptName)} RAM) somewhere unique, not enough resources`)

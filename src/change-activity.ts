@@ -1,5 +1,5 @@
 /* eslint-disable no-case-declarations */
-import { BladeburnerCurAction, CompanyWorkTask, CreateProgramWorkTask, CrimeTask, FactionWorkTask, GangGenInfo, GraftingTask, NS, Player, SleeveBladeburnerTask, SleeveInfiltrateTask, SleevePerson, SleeveRecoveryTask, SleeveSynchroTask, SleeveTask, StudyTask, Task } from "@ns";
+import { BladeburnerActionTypeForSleeve, BladeburnerBlackOpName, BladeburnerContractName, BladeburnerCurAction, BladeburnerGeneralActionName, BladeburnerOperationName, CompanyWorkTask, CreateProgramWorkTask, CrimeTask, FactionWorkTask, GangGenInfo, GraftingTask, NS, Player, SleeveBladeburnerTask, SleeveInfiltrateTask, SleevePerson, SleeveRecoveryTask, SleeveSupportTask, SleeveSynchroTask, SleeveTask, StudyTask, Task } from "@ns";
 import { ALL_FACTIONS, companyFactions, factionCompanies, hasRemainingAugmentations, shouldJoinFaction } from "./utils/factionHandling";
 import { CityName, CompanyName, CrimeType, GymLocationName, GymType, LocationName, UniversityClassType, UniversityLocationName } from "./utils/enums";
 import { neverReached } from "./utils/utils";
@@ -11,7 +11,9 @@ let gang: GangGenInfo | null
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("disableLog")
   ns.disableLog("getServerMoneyAvailable")
-  ns.disableLog("sleep")
+  ns.disableLog("asleep")
+  ns.disableLog("sleeve.setToFactionWork")
+  ns.disableLog("bladeburner.setTeamSize")
   hasNeuroReceptorManager = ns.singularity.getOwnedAugmentations().includes("Neuroreceptor Management Implant")
 
   let isFirstTime = true
@@ -19,8 +21,16 @@ export async function main(ns: NS): Promise<void> {
     if (isFirstTime) {
       isFirstTime = false
     } else {
-      await ns.sleep(hasNeuroReceptorManager ? 10 * 1000 : 2 * 60 * 1000)
+      const promises: Promise<unknown>[] = [
+        ns.asleep(hasNeuroReceptorManager ? 10 * 1000 : 2 * 60 * 1000),
+      ]
+      if (ns.bladeburner.inBladeburner() && ns.bladeburner.getCurrentAction() !== null) {
+        promises.push(ns.bladeburner.nextUpdate())
+      }
+      await Promise.race(promises)
+      await ns.sleep(100)
     }
+    hasNeuroReceptorManager = hasNeuroReceptorManager || !ns.singularity.isFocused()
     player = ns.getPlayer()
     gang = ns.gang.inGang() ? ns.gang.getGangInformation() : null
     const currentActivity = ns.singularity.getCurrentWork()
@@ -33,11 +43,11 @@ export async function main(ns: NS): Promise<void> {
         break
       }
     }
-    const numSleeves = ns.sleeve.getNumSleeves()
+    const numSleeves = 6;//ns.sleeve.getNumSleeves()
     for (let i = 0; i < numSleeves; i++) {
       const sleeve = ns.sleeve.getSleeve(i)
       const sleeveTask = ns.sleeve.getTask(i)
-      const tasks = decideTask(ns, sleeve)
+      const tasks = decideTask(ns, sleeve, i)
       for (const task of tasks) {
         if (doTask(ns, sleeve, task, sleeveTask, i)) {
           break
@@ -46,6 +56,38 @@ export async function main(ns: NS): Promise<void> {
     }
   }
 }
+interface GeneralBladeburnerTask {
+  type: "BLADEBURNER";
+  actionType: "General";
+  actionName: BladeburnerGeneralActionName;
+}
+interface ContractBladeburnerTask {
+  type: "BLADEBURNER";
+  actionType: "Contracts";
+  actionName: BladeburnerContractName;
+}
+interface OperationBladeburnerTask {
+  type: "BLADEBURNER";
+  actionType: "Operations";
+  actionName: BladeburnerOperationName;
+}
+interface BlackOpBladeburnerTask {
+  type: "BLADEBURNER";
+  actionType: "Black Operations";
+  actionName: BladeburnerBlackOpName;
+}
+
+type ExtendedBladeburnerTask =
+  | GeneralBladeburnerTask
+  | ContractBladeburnerTask
+  | OperationBladeburnerTask
+  | BlackOpBladeburnerTask;
+
+interface SleeveExtendedBladeburnerTask {
+  type: "BLADEBURNER",
+  actionName: BladeburnerActionTypeForSleeve,
+  contract?: BladeburnerContractName,
+}
 
 type PlayerTask =
   | StudyTask
@@ -53,16 +95,17 @@ type PlayerTask =
   | CreateProgramWorkTask
   | CrimeTask
   | FactionWorkTask
-  | GraftingTask;
+  | GraftingTask
+  | ExtendedBladeburnerTask;
 type MySleeveTask =
-  | SleeveBladeburnerTask
+  | SleeveExtendedBladeburnerTask
   | StudyTask
   | CompanyWorkTask
   | CrimeTask
   | FactionWorkTask
   | SleeveInfiltrateTask
   | SleeveRecoveryTask
-  // | SleeveSupportTask
+  | SleeveSupportTask
   | SleeveSynchroTask;
 
 type MyPerson = Player | SleevePerson
@@ -70,11 +113,9 @@ type PersonTask<T> =
   T extends Player ? PlayerTask :
   MySleeveTask
 
-function decideTask<T extends MyPerson>(ns: NS, person: T): PersonTask<T>[] {
+function decideTask<T extends MyPerson>(ns: NS, person: T, sleeveNumber = -1): PersonTask<T>[] {
   const tasks: PersonTask<T>[] = []
   const isPlayer = "karma" in person
-
-  ns.sleeve.getTask(0)
 
   if (!isPlayer) {
     // Shock recovery until 0 shock
@@ -93,7 +134,7 @@ function decideTask<T extends MyPerson>(ns: NS, person: T): PersonTask<T>[] {
     if (player.karma > -54000) {
       tasks.push(bestCrime(ns, person, "karma"))
     }
-  } else {
+  } else if (!ns.bladeburner.inBladeburner()) {
     for (const statName of ["strength", "defense", "dexterity", "agility"] as const) {
       if (person.skills[statName] < 100) {
         // Study in whatever university we have access to
@@ -111,6 +152,55 @@ function decideTask<T extends MyPerson>(ns: NS, person: T): PersonTask<T>[] {
           })
         }
       }
+    }
+  }
+
+  if (isPlayer && ns.bladeburner.inBladeburner()) {
+    const [currStamina, maxStamina] = ns.bladeburner.getStamina()
+    if (currStamina * 1.4 > maxStamina && person.hp.current * 1.4 > person.hp.max) {
+      const outputs = [];
+      const types = isPlayer ? ["General", "Contracts", "Operations", "Black Operations"] as const : ["General", "Contracts"] as const
+      for (const type of types) {
+        const names = type === "General" ? ns.bladeburner.getGeneralActionNames() :
+          type === "Contracts" ? ns.bladeburner.getContractNames() :
+            type === "Operations" ? ns.bladeburner.getOperationNames() :
+              type === "Black Operations" ? ns.bladeburner.getBlackOpNames() :
+                neverReached(type)
+        for (const name of names) {
+          ns.bladeburner.setTeamSize(type, name, 0)
+          const successChances = ns.bladeburner.getActionEstimatedSuccessChance(type, name)
+          const remaining = ns.bladeburner.getActionCountRemaining(type, name)
+          const result = ns.bladeburner.getActionRepGain(type, name)
+          const time = ns.bladeburner.getActionTime(type, name)
+          if (successChances[0] < 0.4 || successChances[1] < 0.7) {
+            continue
+          }
+          outputs.push({
+            type,
+            name,
+            result: result * successChances[0] / time,
+            remaining,
+          })
+        }
+      }
+
+      outputs.sort((a, b) => b.result - a.result)
+      for (const output of outputs) {
+        if (output.result > 0 && output.remaining >= 1) {
+          tasks.push({
+            type: "BLADEBURNER",
+            actionType: output.type,
+            actionName: output.name,
+          } as PersonTask<T>)
+        }
+      }
+
+    } else {
+      tasks.push({
+        type: "BLADEBURNER",
+        actionType: "General",
+        actionName: "Hyperbolic Regeneration Chamber",
+      } as ExtendedBladeburnerTask as PersonTask<T>)
     }
   }
 
@@ -151,7 +241,7 @@ function decideTask<T extends MyPerson>(ns: NS, person: T): PersonTask<T>[] {
     }
   }
 
-  const factionsWith150Favor = ALL_FACTIONS.filter(f => ns.singularity.getFactionFavor(f) >= 150)
+  const factionsWith150Favor = ALL_FACTIONS.filter(f => ns.singularity.getFactionFavor(f) >= ns.getBitNodeMultipliers().RepToDonateToFaction)
   if (factionsWith150Favor.length === 0) {
     const factionWithGreatestFavor = factions.map(f => ({ faction: f, favor: ns.singularity.getFactionFavor(f) })).sort((a, b) => b.favor - a.favor)[0]?.faction
     if (factionWithGreatestFavor) {
@@ -211,6 +301,26 @@ function decideTask<T extends MyPerson>(ns: NS, person: T): PersonTask<T>[] {
   if (player.karma > -54000) {
     tasks.push(bestCrime(ns, person, "karma"))
   }
+
+  if (!isPlayer && ns.bladeburner.inBladeburner()) {
+    // Recruit
+    const recruitChance = ns.bladeburner.getActionEstimatedSuccessChance("General", "Recruitment", sleeveNumber)
+    if (recruitChance[0] > 0.7) {
+      tasks.push({
+        type: "BLADEBURNER",
+        actionName: "Recruitment",
+      } as SleeveExtendedBladeburnerTask as PersonTask<T>)
+    }
+    if (sleeveNumber === 2 || sleeveNumber === 3) {
+      tasks.push({
+        type: "INFILTRATE",
+      } as PersonTask<T>)
+    }
+
+
+  }
+
+
   // Do crime for money
   tasks.push(
     bestCrime(ns, person, "karma")
@@ -219,7 +329,7 @@ function decideTask<T extends MyPerson>(ns: NS, person: T): PersonTask<T>[] {
   return tasks as PersonTask<T>[]
 }
 
-function doTask(ns: NS, person: MyPerson, task: Task | SleeveTask, currentTask: Task | SleeveTask | null, sleeveNumber = -1, currentBBActivity?: BladeburnerCurAction | null): boolean {
+function doTask(ns: NS, person: MyPerson, task: PlayerTask | MySleeveTask, currentTask: Task | SleeveTask | null, sleeveNumber = -1, currentBBActivity?: BladeburnerCurAction | null): boolean {
   try {
     // If currentTask is the same as task, do nothing and return true
     if (tasksAreEqual(currentTask, task)) {
@@ -228,10 +338,17 @@ function doTask(ns: NS, person: MyPerson, task: Task | SleeveTask, currentTask: 
     if (currentTask?.type === "GRAFTING") {
       return true
     }
-    if (currentBBActivity != null) {
+    if (isBladeburnerTask(task) &&
+      (
+        (currentBBActivity != null && currentBBActivity.name === task.actionName)
+        ||
+        (isBladeburnerTask(currentTask) && currentTask.actionName === task.actionName))
+    ) {
       return true
     }
-    ns.print(`${sleeveNumber} - ${JSON.stringify(task)}`)
+    if (currentBBActivity != null && ns.bladeburner.getActionCurrentTime() > 5 * 1000) {
+      return false
+    }
 
     switch (task.type) {
       case "RECOVERY":
@@ -241,9 +358,15 @@ function doTask(ns: NS, person: MyPerson, task: Task | SleeveTask, currentTask: 
       case "SUPPORT":
         return false
       case "BLADEBURNER":
-        return false
+        if (sleeveNumber === -1) {
+          const personTask = task as ExtendedBladeburnerTask
+          return ns.bladeburner.startAction(personTask.actionType, personTask.actionName)
+        } else {
+          const sleeveTask = task as SleeveExtendedBladeburnerTask
+          return ns.sleeve.setToBladeburnerAction(sleeveNumber, sleeveTask.actionName)
+        }
       case "INFILTRATE":
-        return false
+        return ns.sleeve.setToBladeburnerAction(sleeveNumber, "Infiltrate Synthoids")
       case "COMPANY":
         if (sleeveNumber === -1) {
           return ns.singularity.workForCompany(task.companyName, !hasNeuroReceptorManager)
@@ -285,7 +408,8 @@ function doTask(ns: NS, person: MyPerson, task: Task | SleeveTask, currentTask: 
           }
         }
       case "CREATE_PROGRAM":
-        return ns.singularity.createProgram(task.programName)
+        // return ns.singularity.createProgram(task.programName)
+        return false
       case "CRIME":
         if (sleeveNumber === -1) {
           ns.singularity.commitCrime(task.crimeType, !hasNeuroReceptorManager)
@@ -294,7 +418,8 @@ function doTask(ns: NS, person: MyPerson, task: Task | SleeveTask, currentTask: 
           return ns.sleeve.setToCommitCrime(sleeveNumber, task.crimeType) ?? false
         }
       case "GRAFTING":
-        return ns.grafting.graftAugmentation(task.augmentation)
+        // return ns.grafting.graftAugmentation(task.augmentation)
+        return false
       default:
         neverReached(task)
     }
@@ -303,7 +428,7 @@ function doTask(ns: NS, person: MyPerson, task: Task | SleeveTask, currentTask: 
   }
 }
 
-function tasksAreEqual(task1: Task | SleeveTask | null, task2: Task | SleeveTask): boolean {
+function tasksAreEqual(task1: Task | SleeveTask | null, task2: PlayerTask | MySleeveTask): boolean {
   if (task1?.type !== task2.type) {
     return false
   }
@@ -325,7 +450,7 @@ function tasksAreEqual(task1: Task | SleeveTask | null, task2: Task | SleeveTask
     case "GRAFTING":
       return isGraftingTask(task2) && task1.augmentation === task2.augmentation
     case "BLADEBURNER":
-      return isBladeburnerTask(task2) && task1.actionName === task2.actionName && task1.actionType === task2.actionType
+      return isBladeburnerTask(task2) && task1.actionName === task2.actionName
     case "INFILTRATE":
       return true
     default:
@@ -364,35 +489,35 @@ const classCity = [
   ...(Object.entries(gymsByCity) as [CityName, LocationName][])
 ] as [CityName, LocationName][]
 
-function isStudyTask(task: Task | SleeveTask | null): task is StudyTask {
+function isStudyTask(task: Task | SleeveTask | PlayerTask | MySleeveTask | null): task is StudyTask {
   return task?.type === "CLASS"
 }
 
-function isCompanyWorkTask(task: Task | SleeveTask | null): task is CompanyWorkTask {
+function isCompanyWorkTask(task: Task | SleeveTask | PlayerTask | MySleeveTask | null): task is CompanyWorkTask {
   return task?.type === "COMPANY"
 }
 
-function isCreateProgramWorkTask(task: Task | SleeveTask | null): task is CreateProgramWorkTask {
+function isCreateProgramWorkTask(task: Task | SleeveTask | PlayerTask | MySleeveTask | null): task is CreateProgramWorkTask {
   return task?.type === "CREATE_PROGRAM"
 }
 
-function isCrimeTask(task: Task | SleeveTask | null): task is CrimeTask {
+function isCrimeTask(task: Task | SleeveTask | PlayerTask | MySleeveTask | null): task is CrimeTask {
   return task?.type === "CRIME"
 }
 
-function isFactionWorkTask(task: Task | SleeveTask | null): task is FactionWorkTask {
+function isFactionWorkTask(task: Task | SleeveTask | PlayerTask | MySleeveTask | null): task is FactionWorkTask {
   return task?.type === "FACTION"
 }
 
-function isGraftingTask(task: Task | SleeveTask | null): task is GraftingTask {
+function isGraftingTask(task: Task | SleeveTask | PlayerTask | MySleeveTask | null): task is GraftingTask {
   return task?.type === "GRAFTING"
 }
 
-function isBladeburnerTask(task: Task | SleeveTask | null): task is SleeveBladeburnerTask {
+function isBladeburnerTask(task: Task | SleeveTask | PlayerTask | MySleeveTask | null): task is SleeveBladeburnerTask | ExtendedBladeburnerTask | SleeveExtendedBladeburnerTask {
   return task?.type === "BLADEBURNER"
 }
 
-function isInfiltrateTask(task: Task | SleeveTask | null): task is SleeveInfiltrateTask {
+function isInfiltrateTask(task: Task | SleeveTask | PlayerTask | MySleeveTask | null): task is SleeveInfiltrateTask {
   return task?.type === "INFILTRATE"
 }
 

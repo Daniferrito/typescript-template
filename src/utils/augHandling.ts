@@ -5,11 +5,11 @@ export function getBuyableAugmentations(ns: NS): string[] {
   const gang = ns.gang.inGang() ? ns.gang.getGangInformation() : null
   const invitations = ns.singularity.checkFactionInvitations()
   const joinedFactions = player.factions
-  const factionWith150Favor = invitations.filter(f => ns.singularity.getFactionFavor(f) >= 150 && f !== gang?.faction)
+  const factionWith150Favor = invitations.filter(f => ns.singularity.getFactionFavor(f) >= ns.getBitNodeMultipliers().RepToDonateToFaction && f !== gang?.faction)
   const relevantFactions = [...new Set([...joinedFactions, ...factionWith150Favor])]
   const augmentations = relevantFactions.flatMap(f =>
     ns.singularity.getAugmentationsFromFaction(f)
-      .filter(a => ns.singularity.getAugmentationRepReq(a) <= ns.singularity.getFactionRep(f) || ns.singularity.getFactionFavor(f) >= 150)
+      .filter(a => ns.singularity.getAugmentationRepReq(a) <= ns.singularity.getFactionRep(f) || ns.singularity.getFactionFavor(f) >= ns.getBitNodeMultipliers().RepToDonateToFaction)
   )
   const uniqueAugmentations = [...new Set(augmentations)]
   const ownedAugmentations = ns.singularity.getOwnedAugmentations(true)
@@ -30,7 +30,7 @@ export function getAugmentationSource(ns: NS, augmentation: string): { faction: 
     const favor = ns.singularity.getFactionFavor(f)
     if (repReq <= ns.singularity.getFactionRep(f)) {
       return [{ faction: f, reason: "rep" }]
-    } else if (favor >= 150) {
+    } else if (favor >= ns.getBitNodeMultipliers().RepToDonateToFaction) {
       return [{ faction: f, reason: "150+ favor" }]
     } else {
       return [] as { faction: string, reason: "rep" | "150+ favor" }[]

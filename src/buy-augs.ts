@@ -24,7 +24,7 @@ async function buyAllAugmentations(ns: NS) {
   const baseBuyableAugmentations = getBuyableAugmentations(ns)
   const factions = ns.singularity.checkFactionInvitations().concat(ns.getPlayer().factions)
   for (const faction of factions) {
-    if (ns.singularity.getFactionFavor(faction) < 150) {
+    if (ns.singularity.getFactionFavor(faction) < ns.getBitNodeMultipliers().RepToDonateToFaction) {
       continue
     }
     const augmentations = ns.singularity.getAugmentationsFromFaction(faction)
@@ -61,7 +61,7 @@ async function buyAllAugmentations(ns: NS) {
   }
 
   const higherRepFactionWith150Favor = factions
-    .filter(f => ns.singularity.getFactionFavor(f) >= 150)
+    .filter(f => ns.singularity.getFactionFavor(f) >= ns.getBitNodeMultipliers().RepToDonateToFaction)
     .sort((a, b) => ns.singularity.getFactionRep(b) - ns.singularity.getFactionRep(a))[0]
   const higherRepFaction = factions.filter(f => ns.singularity.getFactionRep(f) > 0)
     .sort((a, b) => ns.singularity.getFactionRep(b) - ns.singularity.getFactionRep(a))[0]
@@ -107,6 +107,9 @@ function countPurchaseableAugs(ns: NS): [number, number] {
     const augSources = getAugmentationSource(ns, aug)
     if (augSources.every(s => s.reason === "150+ favor")) {
       const faction = sources.filter(s => s.faction === augSources[0].faction).sort((a, b) => b.rep - a.rep)[0]
+      if (faction == null) {
+        continue
+      }
       const reqRepGain = ns.singularity.getAugmentationRepReq(aug) - faction.rep
       if (reqRepGain > 0) {
         const donation = ns.formulas.reputation.donationForRep(reqRepGain, ns.getPlayer())
@@ -124,7 +127,7 @@ function countPurchaseableAugs(ns: NS): [number, number] {
   let nfgBought = 0
 
   const higherRepFactionWith150Favor = sources
-    .filter(s => s.favor >= 150)
+    .filter(s => s.favor >= ns.getBitNodeMultipliers().RepToDonateToFaction)
     .sort((a, b) => b.rep - a.rep)[0]
   const higherRepFaction = sources.filter(s => s.rep > 0)
     .sort((a, b) => b.rep - a.rep)[0]
