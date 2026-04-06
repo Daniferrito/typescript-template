@@ -5,11 +5,11 @@ export function getBuyableAugmentations(ns: NS): string[] {
   const gang = ns.gang.inGang() ? ns.gang.getGangInformation() : null
   const invitations = ns.singularity.checkFactionInvitations()
   const joinedFactions = player.factions
-  const factionWith150Favor = invitations.filter(f => ns.singularity.getFactionFavor(f) >= ns.getBitNodeMultipliers().RepToDonateToFaction && f !== gang?.faction)
+  const factionWith150Favor = invitations.filter(f => ns.singularity.getFactionFavor(f) >= ns.getBitNodeMultipliers().RepToDonateToFaction * 150 && f !== gang?.faction && f !== "Bladeburners")
   const relevantFactions = [...new Set([...joinedFactions, ...factionWith150Favor])]
   const augmentations = relevantFactions.flatMap(f =>
     ns.singularity.getAugmentationsFromFaction(f)
-      .filter(a => ns.singularity.getAugmentationRepReq(a) <= ns.singularity.getFactionRep(f) || ns.singularity.getFactionFavor(f) >= ns.getBitNodeMultipliers().RepToDonateToFaction)
+      .filter(a => ns.singularity.getAugmentationRepReq(a) <= ns.singularity.getFactionRep(f) || ns.singularity.getFactionFavor(f) >= ns.getBitNodeMultipliers().RepToDonateToFaction * 150)
   )
   const uniqueAugmentations = [...new Set(augmentations)]
   const ownedAugmentations = ns.singularity.getOwnedAugmentations(true)
@@ -28,9 +28,10 @@ export function getAugmentationSource(ns: NS, augmentation: string): { faction: 
   return factions.flatMap(f => {
     const repReq = ns.singularity.getAugmentationRepReq(augmentation)
     const favor = ns.singularity.getFactionFavor(f)
+    const gang = ns.gang.inGang() ? ns.gang.getGangInformation() : null
     if (repReq <= ns.singularity.getFactionRep(f)) {
       return [{ faction: f, reason: "rep" }]
-    } else if (favor >= ns.getBitNodeMultipliers().RepToDonateToFaction) {
+    } else if (favor >= ns.getBitNodeMultipliers().RepToDonateToFaction * 150 && f !== gang?.faction && f !== "Bladeburners") {
       return [{ faction: f, reason: "150+ favor" }]
     } else {
       return [] as { faction: string, reason: "rep" | "150+ favor" }[]

@@ -1,10 +1,11 @@
 /* eslint-disable no-case-declarations */
-import { BladeburnerActionTypeForSleeve, BladeburnerBlackOpName, BladeburnerContractName, BladeburnerCurAction, BladeburnerGeneralActionName, BladeburnerOperationName, CompanyWorkTask, CreateProgramWorkTask, CrimeTask, FactionWorkTask, GangGenInfo, GraftingTask, NS, Player, SleeveBladeburnerTask, SleeveInfiltrateTask, SleevePerson, SleeveRecoveryTask, SleeveSupportTask, SleeveSynchroTask, SleeveTask, StudyTask, Task } from "@ns";
+import { BladeburnerCurAction, CompanyWorkTask, CreateProgramWorkTask, CrimeTask, FactionWorkTask, GangGenInfo, GraftingTask, NS, Player, SleeveBladeburnerTask, SleeveInfiltrateTask, SleevePerson, SleeveRecoveryTask, SleeveSupportTask, SleeveSynchroTask, SleeveTask, StudyTask, Task } from "@ns";
 import { ALL_FACTIONS, companyFactions, factionCompanies, hasRemainingAugmentations, shouldJoinFaction } from "./utils/factionHandling";
-import { CityName, CompanyName, CrimeType, GymLocationName, GymType, LocationName, UniversityClassType, UniversityLocationName } from "./utils/enums";
+import { BladeburnerActionTypeForSleeve, BladeburnerBlackOpName, BladeburnerContractName, BladeburnerActionName, BladeburnerOperationName, BladeburnerGeneralActionName, CityName, CompanyName, CrimeType, GymLocationName, GymType, LocationName, UniversityClassType, UniversityLocationName } from "./utils/enums";
 import { neverReached } from "./utils/utils";
 
 let hasNeuroReceptorManager = false
+let hasBladeSimulacrum = false
 let player: Player
 let gang: GangGenInfo | null
 
@@ -13,8 +14,10 @@ export async function main(ns: NS): Promise<void> {
   ns.disableLog("getServerMoneyAvailable")
   ns.disableLog("asleep")
   ns.disableLog("sleeve.setToFactionWork")
+  ns.disableLog("sleeve.setToCompanyWork")
   ns.disableLog("bladeburner.setTeamSize")
   hasNeuroReceptorManager = ns.singularity.getOwnedAugmentations().includes("Neuroreceptor Management Implant")
+  hasBladeSimulacrum = ns.singularity.getOwnedAugmentations().includes("The Blade's Simulacrum")
 
   let isFirstTime = true
   for (; ;) {
@@ -28,22 +31,36 @@ export async function main(ns: NS): Promise<void> {
         promises.push(ns.bladeburner.nextUpdate())
       }
       await Promise.race(promises)
-      await ns.sleep(100)
     }
-    hasNeuroReceptorManager = hasNeuroReceptorManager || !ns.singularity.isFocused()
+    hasNeuroReceptorManager = hasNeuroReceptorManager || (!ns.singularity.isFocused() && ns.singularity.getCurrentWork() != null)
     player = ns.getPlayer()
+    if (player.hp.current < player.hp.max) {
+      ns.singularity.hospitalize()
+      player = ns.getPlayer()
+    }
     gang = ns.gang.inGang() ? ns.gang.getGangInformation() : null
     const currentActivity = ns.singularity.getCurrentWork()
     const currentBBActivity = ns.bladeburner.inBladeburner() ? ns.bladeburner.getCurrentAction() : null
 
-    const tasks = decideTask(ns, player)
+    let tasks = decideTask(ns, player)
+
+    if (hasBladeSimulacrum) {
+      const bbTasks = tasks.filter(t => t.type === "BLADEBURNER")
+      for (const task of bbTasks) {
+        if (doTask(ns, player, task, currentActivity, -1, currentBBActivity)) {
+          break
+        }
+      }
+      tasks = tasks.filter(t => t.type !== "BLADEBURNER")
+
+    }
 
     for (const task of tasks) {
       if (doTask(ns, player, task, currentActivity, -1, currentBBActivity)) {
         break
       }
     }
-    const numSleeves = 6;//ns.sleeve.getNumSleeves()
+    const numSleeves = 8;//ns.sleeve.getNumSleeves()
     for (let i = 0; i < numSleeves; i++) {
       const sleeve = ns.sleeve.getSleeve(i)
       const sleeveTask = ns.sleeve.getTask(i)
@@ -131,7 +148,7 @@ function decideTask<T extends MyPerson>(ns: NS, person: T, sleeveNumber = -1): P
       } as PersonTask<T>)
     }
     // Do crime for karma until we have -54k karma
-    if (player.karma > -54000) {
+    if (!ns.gang.inGang()) {
       tasks.push(bestCrime(ns, person, "karma"))
     }
   } else if (!ns.bladeburner.inBladeburner()) {
@@ -157,28 +174,42 @@ function decideTask<T extends MyPerson>(ns: NS, person: T, sleeveNumber = -1): P
 
   if (isPlayer && ns.bladeburner.inBladeburner()) {
     const [currStamina, maxStamina] = ns.bladeburner.getStamina()
-    if (currStamina * 1.4 > maxStamina && person.hp.current * 1.4 > person.hp.max) {
+    if (ns.bladeburner.getCityChaos(ns.bladeburner.getCity()) > 3) {
+      tasks.push({
+        type: "BLADEBURNER",
+        actionType: "General",
+        actionName: "Diplomacy",
+      } as ExtendedBladeburnerTask as PersonTask<T>)
+    }
+    if (currStamina * 1.7 > maxStamina && person.hp.current * 1.7 > person.hp.max) {
       const outputs = [];
       const types = isPlayer ? ["General", "Contracts", "Operations", "Black Operations"] as const : ["General", "Contracts"] as const
       for (const type of types) {
-        const names = type === "General" ? ns.bladeburner.getGeneralActionNames() :
+        const names = type === "General" ? [BladeburnerGeneralActionName.FieldAnalysis] :
           type === "Contracts" ? ns.bladeburner.getContractNames() :
             type === "Operations" ? ns.bladeburner.getOperationNames() :
               type === "Black Operations" ? ns.bladeburner.getBlackOpNames() :
                 neverReached(type)
         for (const name of names) {
-          ns.bladeburner.setTeamSize(type, name, 0)
+          if (type === "Black Operations") {
+            ns.bladeburner.setTeamSize(type, name, ns.bladeburner.getTeamSize())
+          } else {
+            ns.bladeburner.setTeamSize(type, name, 0)
+          }
           const successChances = ns.bladeburner.getActionEstimatedSuccessChance(type, name)
           const remaining = ns.bladeburner.getActionCountRemaining(type, name)
-          const result = ns.bladeburner.getActionRepGain(type, name)
+          const result = ns.bladeburner.getActionRepGain(type, name, 1)
           const time = ns.bladeburner.getActionTime(type, name)
-          if (successChances[0] < 0.4 || successChances[1] < 0.7) {
+          if (successChances[0] < 0.4 || successChances[1] < 0.7
+            || (type === "Black Operations" && ns.bladeburner.getBlackOpRank(name as BladeburnerBlackOpName) > ns.bladeburner.getRank())
+            || ([BladeburnerOperationName.Raid, BladeburnerOperationName.Sting, BladeburnerOperationName.StealthRetirement] as BladeburnerActionName[]).includes(name)
+          ) {
             continue
           }
           outputs.push({
             type,
             name,
-            result: result * successChances[0] / time,
+            result: type === "Black Operations" ? Number.MAX_SAFE_INTEGER : result * successChances[0] / time,
             remaining,
           })
         }
@@ -186,7 +217,7 @@ function decideTask<T extends MyPerson>(ns: NS, person: T, sleeveNumber = -1): P
 
       outputs.sort((a, b) => b.result - a.result)
       for (const output of outputs) {
-        if (output.result > 0 && output.remaining >= 1) {
+        if (output.result >= 0 && output.remaining >= 1) {
           tasks.push({
             type: "BLADEBURNER",
             actionType: output.type,
@@ -202,6 +233,42 @@ function decideTask<T extends MyPerson>(ns: NS, person: T, sleeveNumber = -1): P
         actionName: "Hyperbolic Regeneration Chamber",
       } as ExtendedBladeburnerTask as PersonTask<T>)
     }
+  }
+
+  if (!isPlayer && ns.bladeburner.inBladeburner()) {
+    // Recruit
+    const recruitChance = ns.bladeburner.getActionEstimatedSuccessChance("General", "Recruitment", sleeveNumber)
+    if (recruitChance[0] > 0.7) {
+      tasks.push({
+        type: "BLADEBURNER",
+        actionName: "Recruitment",
+      } as SleeveExtendedBladeburnerTask as PersonTask<T>)
+    }
+    if (sleeveNumber === 2 || sleeveNumber === 3) {
+      tasks.push({
+        type: "INFILTRATE",
+      } as PersonTask<T>)
+    }
+    if (ns.bladeburner.getCityChaos(ns.bladeburner.getCity()) > 0.5) {
+      tasks.push({
+        type: "BLADEBURNER",
+        actionName: "Diplomacy",
+      } as SleeveExtendedBladeburnerTask as PersonTask<T>)
+    }
+    const [currStamina, maxStamina] = ns.bladeburner.getStamina()
+
+    if (currStamina * 1.1 < maxStamina || person.hp.current * 1.1 < person.hp.max) {
+      tasks.push({
+        type: "BLADEBURNER",
+        actionType: "General",
+        actionName: "Hyperbolic Regeneration Chamber",
+      } as SleeveExtendedBladeburnerTask as PersonTask<T>)
+    }
+    tasks.push({
+      type: "BLADEBURNER",
+      actionType: "General",
+      actionName: "Hyperbolic Regeneration Chamber",
+    } as SleeveExtendedBladeburnerTask as PersonTask<T>)
   }
 
 
@@ -241,7 +308,7 @@ function decideTask<T extends MyPerson>(ns: NS, person: T, sleeveNumber = -1): P
     }
   }
 
-  const factionsWith150Favor = ALL_FACTIONS.filter(f => ns.singularity.getFactionFavor(f) >= ns.getBitNodeMultipliers().RepToDonateToFaction)
+  const factionsWith150Favor = ALL_FACTIONS.filter(f => ns.singularity.getFactionFavor(f) >= ns.getBitNodeMultipliers().RepToDonateToFaction * 150)
   if (factionsWith150Favor.length === 0) {
     const factionWithGreatestFavor = factions.map(f => ({ faction: f, favor: ns.singularity.getFactionFavor(f) })).sort((a, b) => b.favor - a.favor)[0]?.faction
     if (factionWithGreatestFavor) {
@@ -298,28 +365,6 @@ function decideTask<T extends MyPerson>(ns: NS, person: T, sleeveNumber = -1): P
     }
   }
 
-  if (player.karma > -54000) {
-    tasks.push(bestCrime(ns, person, "karma"))
-  }
-
-  if (!isPlayer && ns.bladeburner.inBladeburner()) {
-    // Recruit
-    const recruitChance = ns.bladeburner.getActionEstimatedSuccessChance("General", "Recruitment", sleeveNumber)
-    if (recruitChance[0] > 0.7) {
-      tasks.push({
-        type: "BLADEBURNER",
-        actionName: "Recruitment",
-      } as SleeveExtendedBladeburnerTask as PersonTask<T>)
-    }
-    if (sleeveNumber === 2 || sleeveNumber === 3) {
-      tasks.push({
-        type: "INFILTRATE",
-      } as PersonTask<T>)
-    }
-
-
-  }
-
 
   // Do crime for money
   tasks.push(
@@ -335,7 +380,7 @@ function doTask(ns: NS, person: MyPerson, task: PlayerTask | MySleeveTask, curre
     if (tasksAreEqual(currentTask, task)) {
       return true
     }
-    if (currentTask?.type === "GRAFTING") {
+    if (currentTask?.type === "GRAFTING" && (!isBladeburnerTask(task) || hasBladeSimulacrum)) {
       return true
     }
     if (isBladeburnerTask(task) &&
@@ -346,7 +391,7 @@ function doTask(ns: NS, person: MyPerson, task: PlayerTask | MySleeveTask, curre
     ) {
       return true
     }
-    if (currentBBActivity != null && ns.bladeburner.getActionCurrentTime() > 5 * 1000) {
+    if (isBladeburnerTask(task) && currentBBActivity != null && ns.bladeburner.getActionCurrentTime() > 5 * 1000) {
       return false
     }
 
@@ -557,27 +602,27 @@ function bestCrime(ns: NS, person: MyPerson, objective: "money" | "karma" | "kil
 
   const crimeStats = crimeTypes.map(crimeType => ({ crimeType, chance: ns.formulas.work.crimeSuccessChance(person, crimeType), stats: ns.singularity.getCrimeStats(crimeType) }))
 
-  let bestCrime: CrimeType = CrimeType.homicide
+  let best: CrimeType = CrimeType.homicide
 
   switch (objective) {
     case "money":
-      bestCrime = crimeStats.map(cs => ({ ...cs, score: cs.stats.money * cs.chance / cs.stats.time })).sort((a, b) => b.score - a.score)[0].crimeType
+      best = crimeStats.map(cs => ({ ...cs, score: cs.stats.money * cs.chance / cs.stats.time })).sort((a, b) => b.score - a.score)[0].crimeType
       break
     case "karma":
-      bestCrime = crimeStats.map(cs => ({ ...cs, score: cs.stats.karma * cs.chance / cs.stats.time })).sort((a, b) => b.score - a.score)[0].crimeType
+      best = crimeStats.map(cs => ({ ...cs, score: cs.stats.karma * cs.chance / cs.stats.time })).sort((a, b) => b.score - a.score)[0].crimeType
       break
     case "kills":
-      bestCrime = crimeStats.map(cs => ({ ...cs, score: cs.stats.kills * cs.chance / cs.stats.time })).sort((a, b) => b.score - a.score)[0].crimeType
+      best = crimeStats.map(cs => ({ ...cs, score: cs.stats.kills * cs.chance / cs.stats.time })).sort((a, b) => b.score - a.score)[0].crimeType
       break
     case "intelligence":
       // Change is marked that way because a failed attempt still gives half experience
-      bestCrime = crimeStats.map(cs => ({ ...cs, score: cs.stats.intelligence_exp * ((1 + cs.chance) / 2) / cs.stats.time })).sort((a, b) => b.score - a.score)[0].crimeType
+      best = crimeStats.map(cs => ({ ...cs, score: cs.stats.intelligence_exp * ((1 + cs.chance) / 2) / cs.stats.time })).sort((a, b) => b.score - a.score)[0].crimeType
       break
   }
 
   return {
     type: "CRIME",
-    crimeType: bestCrime,
+    crimeType: best,
     cyclesWorked: 0
   }
 }

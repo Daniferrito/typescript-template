@@ -93,7 +93,7 @@ export async function main(ns: NS): Promise<void> {
         const memberInfo = ns.gang.getMemberInformation(member)
         const taskResults = tasks.map(t => (getTaskResult(ns, memberInfo, t, gangInfo)))
 
-        if (newGangInfo.wantedLevel > 1.01 && -newGangInfo.wantedLevelGainRate < newGangInfo.wantedLevel - 1) {
+        if (newGangInfo.wantedLevel > 0.001 * newGangInfo.respect && -newGangInfo.wantedLevelGainRate < newGangInfo.wantedLevel - 1) {
           const bestWantedTask = taskResults.filter(t => t.wanted < 0.1).sort((a, b) => a.wanted - b.wanted)[0]
           if (bestWantedTask && bestWantedTask.wanted < 0) {
             ns.gang.setMemberTask(member, bestWantedTask.name)
@@ -131,7 +131,7 @@ export async function main(ns: NS): Promise<void> {
         // ns.print(`${newGangInfo.wantedLevel > 2}, ${-newGangInfo.wantedLevelGainRate < newGangInfo.wantedLevel}, ${-newGangInfo.wantedLevelGainRate}, ${newGangInfo.wantedLevel}`)
 
 
-        if (gangInfo.respect < 1_000_000_000) {
+        if (gangInfo.respect < 1_000_000_000 || ns.singularity.getFactionRep(gangInfo.faction) < 3_500_000) {
           const bestRespectTask = taskResults.filter(t => t.respect > 0).sort((a, b) => b.respect - a.respect)[0]
           if (bestRespectTask && bestRespectTask.respect > 0) {
             ns.gang.setMemberTask(member, bestRespectTask.name)

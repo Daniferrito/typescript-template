@@ -1,17 +1,19 @@
 import { NS } from "@ns";
 import { getAugmentationSource, getBuyableAugmentations, sortAugmentations } from "./utils/augHandling";
+import { FactionName } from "./utils/enums";
 
 export async function main(ns: NS): Promise<void> {
   ns.disableLog("ALL")
-  // ns.enableLog("singularity.purchaseAugmentation")
+  ns.enableLog("singularity.purchaseAugmentation")
   // ns.enableLog("singularity.donateToFaction")
   ns.clearLog()
 
   for (; ;) {
     const [numOfBuyableAugs, numOfNFGs] = countPurchaseableAugs(ns)
+    const canBuyRedPill = ns.singularity.getFactionFavor(FactionName.Daedalus) + ns.singularity.getFactionFavorGain(FactionName.Daedalus) >= ns.getBitNodeMultipliers().RepToDonateToFaction * 150 && ns.getServerMoneyAvailable("home") >= ns.formulas.reputation.donationForRep(ns.getBitNodeMultipliers().RepToDonateToFaction * 150, ns.getPlayer())
     const numOfNonNFGAugs = numOfBuyableAugs - numOfNFGs
     ns.print(`You can currently buy ${numOfBuyableAugs} augmentations (${numOfNonNFGAugs} non-NFGs and ${numOfNFGs} NFGs) with your current money and faction reputations (including donations)`)
-    if (numOfNonNFGAugs >= 5) {
+    if (numOfNonNFGAugs >= 5 || canBuyRedPill || numOfNFGs >= 10) {
       await buyAllAugmentations(ns)
       ns.singularity.installAugmentations("start-script.js")
     }
@@ -24,7 +26,7 @@ async function buyAllAugmentations(ns: NS) {
   const baseBuyableAugmentations = getBuyableAugmentations(ns)
   const factions = ns.singularity.checkFactionInvitations().concat(ns.getPlayer().factions)
   for (const faction of factions) {
-    if (ns.singularity.getFactionFavor(faction) < ns.getBitNodeMultipliers().RepToDonateToFaction) {
+    if (ns.singularity.getFactionFavor(faction) < ns.getBitNodeMultipliers().RepToDonateToFaction * 150) {
       continue
     }
     const augmentations = ns.singularity.getAugmentationsFromFaction(faction)
@@ -44,26 +46,29 @@ async function buyAllAugmentations(ns: NS) {
       }
     }
   }
-  // Count how many threads are currently running on each server and print it
   const buyableAugmentations = sortAugmentations(ns, getBuyableAugmentations(ns))
   for (const aug of buyableAugmentations) {
     const sources = getAugmentationSource(ns, aug)
     ns.print(`${aug} ${ns.formatNumber(ns.singularity.getAugmentationPrice(aug), 0)}: ${sources.map(s => `${s.faction} (${s.reason})`).join(", ")}`)
-    if (sources.every(s => s.reason === "150+ favor")) {
+    const nonFavorSource = sources.find(s => s.reason !== "150+ favor")
+    if (sources.every(s => s.reason === "150+ favor") && sources[0] != null) {
       const reqRepGain = ns.singularity.getAugmentationRepReq(aug) - ns.singularity.getFactionRep(sources[0].faction)
       ns.singularity.donateToFaction(sources[0].faction, ns.formulas.reputation.donationForRep(reqRepGain, ns.getPlayer()))
       await ns.sleep(200)
       ns.singularity.purchaseAugmentation(sources[0].faction, aug)
-    } else {
-      ns.singularity.purchaseAugmentation(sources.filter(s => s.reason !== "150+ favor")[0].faction, aug)
+    } else if (nonFavorSource) {
+      ns.singularity.purchaseAugmentation(nonFavorSource.faction, aug)
     }
     await ns.sleep(200)
   }
-
+  const gang = ns.gang.inGang() ? ns.gang.getGangInformation() : null
   const higherRepFactionWith150Favor = factions
-    .filter(f => ns.singularity.getFactionFavor(f) >= ns.getBitNodeMultipliers().RepToDonateToFaction)
+    .filter(f => f !== gang?.faction && f !== "Bladeburners")
+    .filter(f => ns.singularity.getFactionFavor(f) >= ns.getBitNodeMultipliers().RepToDonateToFaction * 150)
     .sort((a, b) => ns.singularity.getFactionRep(b) - ns.singularity.getFactionRep(a))[0]
-  const higherRepFaction = factions.filter(f => ns.singularity.getFactionRep(f) > 0)
+  const higherRepFaction = factions
+    .filter(f => f !== gang?.faction && f !== "Bladeburners")
+    .filter(f => ns.singularity.getFactionRep(f) > 0)
     .sort((a, b) => ns.singularity.getFactionRep(b) - ns.singularity.getFactionRep(a))[0]
   for (; ;) {
     // Buy NFG as much as we can, donating to the faction with greatest current rep if needed
@@ -106,7 +111,7 @@ function countPurchaseableAugs(ns: NS): [number, number] {
     }
     const augSources = getAugmentationSource(ns, aug)
     if (augSources.every(s => s.reason === "150+ favor")) {
-      const faction = sources.filter(s => s.faction === augSources[0].faction).sort((a, b) => b.rep - a.rep)[0]
+      const faction = sources.filter(s => s.faction === augSources[0]?.faction).sort((a, b) => b.rep - a.rep)[0]
       if (faction == null) {
         continue
       }
@@ -126,10 +131,14 @@ function countPurchaseableAugs(ns: NS): [number, number] {
   }
   let nfgBought = 0
 
+  const gang = ns.gang.inGang() ? ns.gang.getGangInformation() : null
   const higherRepFactionWith150Favor = sources
-    .filter(s => s.favor >= ns.getBitNodeMultipliers().RepToDonateToFaction)
+    .filter(s => s.faction !== gang?.faction && s.faction !== "Bladeburners")
+    .filter(s => s.favor >= ns.getBitNodeMultipliers().RepToDonateToFaction * 150)
     .sort((a, b) => b.rep - a.rep)[0]
-  const higherRepFaction = sources.filter(s => s.rep > 0)
+  const higherRepFaction = sources
+    .filter(s => s.faction !== gang?.faction && s.faction !== "Bladeburners")
+    .filter(s => s.rep > 0)
     .sort((a, b) => b.rep - a.rep)[0]
   if (!higherRepFaction) {
     return [count, nfgBought]
