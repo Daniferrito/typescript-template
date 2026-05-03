@@ -70,7 +70,7 @@ export async function main(ns: NS): Promise<void> {
     lastPower = power
     lastTerritory = territory
 
-    const chancesToWinClash = Object.entries(ns.gang.getOtherGangInformation())
+    const chancesToWinClash = Object.entries(ns.gang.getAllGangInformation())
       .filter(([name, gangObject]) => name != gangInfo.faction && gangObject.territory > 0)
       .map(([name]) => ns.gang.getChanceToWinClash(name))
     const minChangeToWinClash = chancesToWinClash.reduce((acc, val) => Math.min(acc, val), 1)
@@ -131,7 +131,7 @@ export async function main(ns: NS): Promise<void> {
         // ns.print(`${newGangInfo.wantedLevel > 2}, ${-newGangInfo.wantedLevelGainRate < newGangInfo.wantedLevel}, ${-newGangInfo.wantedLevelGainRate}, ${newGangInfo.wantedLevel}`)
 
 
-        if (gangInfo.respect < 1_000_000_000 || ns.singularity.getFactionRep(gangInfo.faction) < 3_500_000) {
+        if (gangInfo.respect < 1_000_000_000 && ns.singularity.getFactionRep(gangInfo.faction) < 3_500_000) {
           const bestRespectTask = taskResults.filter(t => t.respect > 0).sort((a, b) => b.respect - a.respect)[0]
           if (bestRespectTask && bestRespectTask.respect > 0) {
             ns.gang.setMemberTask(member, bestRespectTask.name)

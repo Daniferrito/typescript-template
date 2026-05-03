@@ -19,7 +19,7 @@ export function scanServers(ns: NS): Servers {
       hacked.push(curr)
     }
     for (const neightbour of neightbours) {
-      if (visited.includes(neightbour)) {
+      if (visited.includes(neightbour) || neightbour.startsWith("hacknet-server-")) {
         continue
       }
       open.push(neightbour)

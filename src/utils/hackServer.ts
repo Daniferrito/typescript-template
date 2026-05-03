@@ -176,7 +176,7 @@ function hackServer(ns: NS, target: HackAnalyzeResult, servers: string[], killLo
   const efficiency = threadEfficiency ? threadEfficiency / (totalTime / 1000) : 0
 
   if (batchesLaunched > 0) {
-    ns.print(`SUCCESS: Launched ${String(batchesLaunched).padStart(6, ' ')} batches (${String(totalThreads).padStart(8, ' ')} threads) on ${target.hostname.padStart(18, ' ')} of ${String(hackThreads).padStart(3, ' ')}, ${String(weakThreads1).padStart(3, ' ')}, ${String(growThreads).padStart(3, ' ')}, ${String(weakThreads2).padStart(3, ' ')}, ${ns.tFormat(totalTime).padStart(21, ' ')}, ${ns.formatNumber(totalHackedMoney, 0).padStart(4, ' ')}$. Eff: ${ns.formatNumber(threadEfficiency, 0).padStart(4, ' ')} $/th, ${ns.formatNumber(timeEfficiency, 0).padStart(4, ' ')} $/s, ${ns.formatNumber(efficiency, 0).padStart(4, ' ')} $/th/s, expected eff: ${ns.formatNumber(target.efficiency, 0).padStart(4, ' ')} $/th/s.`)
+    ns.print(`SUCCESS: Launched ${String(batchesLaunched).padStart(6, ' ')} batches (${String(totalThreads).padStart(8, ' ')} threads) on ${target.hostname.padStart(18, ' ')} of ${String(hackThreads).padStart(3, ' ')}, ${String(weakThreads1).padStart(3, ' ')}, ${String(growThreads).padStart(3, ' ')}, ${String(weakThreads2).padStart(3, ' ')}, ${ns.format.time(totalTime).padStart(21, ' ')}, ${ns.format.number(totalHackedMoney, 0).padStart(4, ' ')}$. Eff: ${ns.format.number(threadEfficiency, 0).padStart(4, ' ')} $/th, ${ns.format.number(timeEfficiency, 0).padStart(4, ' ')} $/s, ${ns.format.number(efficiency, 0).padStart(4, ' ')} $/th/s, expected eff: ${ns.format.number(target.efficiency, 0).padStart(4, ' ')} $/th/s.`)
   }
 
   return {

@@ -25,7 +25,7 @@ export async function main(_ns: NS): Promise<void> {
   ns.disableLog("ALL")
   startupScripts(ns,)
 
-  ns.ui.openTail()
+  // ns.ui.openTail()
   ns.ui.resizeTail(2000, 400)
   ns.ui.moveTail(300, 820)
 
@@ -51,6 +51,7 @@ async function startupScripts(ns: NS): Promise<void> {
   runSomewhereUnique(ns, "hacknet-improve.js", servers)
   runSomewhereUnique(ns, "join-factions-jobs.js", servers)
   runSomewhereUnique(ns, "buy-augs.js", servers)
+  runSomewhereUnique(ns, "bladeburner-skills.js", servers)
   runSomewhereUnique(ns, "prestige.js", servers)
   const homeServer = ns.getServer("home")
   if (!(homeServer.maxRam >= 2 ** 8)) {
@@ -88,7 +89,7 @@ const timers: Timer[] = []
 
 function killLowEffScriptsGen(timers: Timer[]): (efficiencyThreshold: number) => boolean {
   return (efficiencyThreshold: number): boolean => {
-    // ns.print(`Checking for batches to kill with efficiency threshold ${ns.formatNumber(efficiencyThreshold, 0)}$/th/s ( ${timers.length} timers)`)
+    // ns.print(`Checking for batches to kill with efficiency threshold ${ns.format.number(efficiencyThreshold, 0)}$/th/s ( ${timers.length} timers)`)
     const now = Date.now()
     for (const timer of timers) {
       if (timer.timeStartsFinishing < now || timer.output.batchPids.length === 0) {
@@ -104,7 +105,7 @@ function killLowEffScriptsGen(timers: Timer[]): (efficiencyThreshold: number) =>
       const efficiency = threadEfficiency / (totalTime / 1000)
       if (efficiency < efficiencyThreshold && !timer.killed) {
         if (efficiency > 0) {
-          ns.print(`WARN   : Killing batch on ${timer.hostname} with efficiency ${ns.formatNumber(efficiency, 0)}$/th/s, which is below the threshold of ${ns.formatNumber(efficiencyThreshold, 0)}$/th/s`)
+          ns.print(`WARN   : Killing batch on ${timer.hostname} with efficiency ${ns.format.number(efficiency, 0)}$/th/s, which is below the threshold of ${ns.format.number(efficiencyThreshold, 0)}$/th/s`)
         }
         for (const batch of timer.output.batchPids) {
           for (const pid of batch) {
@@ -149,7 +150,7 @@ async function multiHack(ns: NS, fixedTargets?: string[]): Promise<never> {
           break
         }
         const output = hackServer(ns, target, servers, killLowEffScriptsGen(timers))
-        // ns.print(`INFO   : Hack attempt on ${target.hostname} finished. Efficiency: ${ns.formatNumber(output.efficiency, 0)}$/th/s. Prepared: ${output.prepared}. Time until first batch can finish: ${ns.tFormat(output.firstFinishTime)}. Total time until all batches finish: ${ns.tFormat(output.totalTime)}.`)
+        // ns.print(`INFO   : Hack attempt on ${target.hostname} finished. Efficiency: ${ns.format.number(output.efficiency, 0)}$/th/s. Prepared: ${output.prepared}. Time until first batch can finish: ${ns.format.time(output.firstFinishTime)}. Total time until all batches finish: ${ns.format.time(output.totalTime)}.`)
         if (output.totalTime > 0) {
           timers.push({
             hostname: target.hostname,
@@ -212,8 +213,8 @@ function TimerComponent() {
   return (
     // <th colSpan={2}>
     <>
-      <p>Karma: {ns.formatNumber(player.karma, 2)}, Kills: {ns.formatNumber(player.numPeopleKilled, 0)}</p>
-      <p>Total: {ns.formatNumber(timers.reduce((acc, timer) => acc + timer.output.timeEfficiency, 0), 0)}$/s (${ns.formatNumber(maxEff, 0)}$/th/s)</p>
+      <p>Karma: {ns.format.number(player.karma, 2)}, Kills: {ns.format.number(player.numPeopleKilled, 0)}</p>
+      <p>Total: {ns.format.number(timers.reduce((acc, timer) => acc + timer.output.timeEfficiency, 0), 0)}$/s (${ns.format.number(maxEff, 0)}$/th/s)</p>
       <table style={{ width: "100%" }}>
         <thead><tr>
           <td>Hostname</td>
@@ -229,7 +230,7 @@ function TimerComponent() {
               }}>
                 <td style={{ textAlign: "start" }}>{timer.hostname}</td>
                 <td>{formatTimeShort(timer.timeFinishes - now)}</td>
-                <td>{`${ns.formatNumber(timer.output.efficiency, 0).padStart(4, ' ')}`}</td>
+                <td>{`${ns.format.number(timer.output.efficiency, 0).padStart(4, ' ')}`}</td>
               </tr>
               <tr key={`${timer.hostname}-progress`}><td colSpan={3}><DoubleProgressBar progress1={(now - timer.timeStarted) / (timer.timeFinishes - timer.timeStarted)} progress2={(now - timer.timeStarted) / (timer.timeStartsFinishing - timer.timeStarted)} /></td></tr>
             </>
@@ -292,7 +293,7 @@ function DoubleProgressBar({ progress1, progress2 }: { progress1: number, progre
 }
 
 function copyEverythingEverywhere(ns: NS, servers: string[]) {
-  const everything = ns.ls("home").filter(file => file.endsWith(".js"))
+  const everything = ns.ls("home").filter(file => file.endsWith(".js") || file.endsWith(".txt"))
   for (const server of servers) {
     ns.scp(everything, server, "home")
   }

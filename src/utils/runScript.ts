@@ -54,7 +54,7 @@ export function emptyAllocatorOutput(ns: NS, servers: string[]): AllocatorOutput
   return {
     allocations: [],
     servers: servers.map(h => ({
-      server: ns.getServer(h),
+      server: ns.getServer(h) as Server,
       prevReservedRam: 0
     }))
   }
@@ -68,7 +68,7 @@ export function scriptAllocator(ns: NS, scripts: RunScriptOptions[], serverHostn
   const serversToRunOn = scripts.map(() => [] as { hostname: string, threads: number }[]) // array of servers to run each script on, with the number of threads to run on each server
   const scriptRams = scripts.map(s => ns.getScriptRam(s.script))
   const servers = prevScriptAllocation ? structuredClone(prevScriptAllocation.servers) : serverHostnames
-    .map(h => ns.getServer(h))
+    .map(h => ns.getServer(h) as Server)
     .map(server => ({
       server,
       prevReservedRam: 0,
@@ -135,7 +135,7 @@ export function scriptsFitOnServers(ns: NS, scripts: AllocatorOutput): boolean {
   }
 
   for (const hostname in serversWithRamAllocated) {
-    const server = ns.getServer(hostname)
+    const server = ns.getServer(hostname) as Server
     const availableRam = server.maxRam - server.ramUsed - ramReservation(server)
     if (serversWithRamAllocated[hostname] > availableRam) {
       return false

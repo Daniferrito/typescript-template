@@ -27,7 +27,7 @@ export function ServerBrowser({ ns }: { ns: NS }) {
   React.useEffect(() => {
     const servers = getServers(ns)
     const sorted = calcSortedServerToHack(ns, servers)
-    setServerList(sorted.map(s => ns.getServer(s)))
+    setServerList(sorted.map(s => ns.getServer(s) as Server))
   }, [ns])
 
   return (
@@ -40,7 +40,7 @@ export function ServerBrowser({ ns }: { ns: NS }) {
           )}
         </tbody>
       </table>
-      {`Time since start: ${ns.tFormat(timeSinceStart)}`}
+      {`Time since start: ${ns.format.time(timeSinceStart)}`}
     </div>
   )
 }

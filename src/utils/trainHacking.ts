@@ -6,7 +6,7 @@ import { WEAK_SCRIPT } from "./constants";
 export default function trainHacking(ns: NS, servers: string[]): HackServerOutput {
   const player = ns.getPlayer()
   const bestServer = servers
-    .map(s => ns.getServer(s))
+    .map(s => ns.getServer(s) as Server)
     .filter(s => (s.requiredHackingSkill ?? Infinity <= player.skills.hacking) && s.hasAdminRights)
     .map(s => ({ name: s.hostname, server: s, expPerSec: expGain(s) / ns.formulas.hacking.weakenTime({ ...s, hackDifficulty: s.minDifficulty }, player) }))
     .sort((a, b) => b.expPerSec - a.expPerSec)[0]

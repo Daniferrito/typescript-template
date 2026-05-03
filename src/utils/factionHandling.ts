@@ -1,7 +1,8 @@
-import { NS } from "@ns";
+import { NS, Server } from "@ns";
 import { connectServer } from "./connect-server";
 import { CityName, CompanyName, FactionName } from "./enums";
 import { hasNecessarySkills } from "./jobsHandler";
+import { getRecordKeys } from "./utils";
 
 export const hackingFactionServers = {
   CyberSec: "CSEC",
@@ -60,6 +61,7 @@ export const enemyFactions = {
   "New Tokyo": [FactionName.Volhaven, FactionName.Sector12, FactionName.Aevum],
   "Ishima": [FactionName.Volhaven, FactionName.Sector12, FactionName.Aevum],
   "Volhaven": [FactionName.Sector12, FactionName.Aevum, FactionName.Chongqing, FactionName.NewTokyo, FactionName.Ishima],
+  "Tian Di Hui": [],
 } satisfies Partial<Record<FactionName, FactionName[]>>
 
 export const companyFactions = Object.keys(companyFactionCompanies) as FactionName[]
@@ -93,7 +95,7 @@ async function backdoorFactionServers(ns: NS): Promise<void> {
       serverNames = [serverNames]
     }
     for (const serverName of serverNames) {
-      const server = ns.getServer(serverName)
+      const server = ns.getServer(serverName) as Server
       const reqHack = server.requiredHackingSkill ?? 0
       if (ns.getPlayer().skills.hacking >= reqHack && server.hasAdminRights && !server.backdoorInstalled) {
         ns.print(`Backdooring ${server.hostname} for faction ${faction}...`)
@@ -109,15 +111,15 @@ async function backdoorFactionServers(ns: NS): Promise<void> {
 }
 
 async function moveToFactionsCities(ns: NS): Promise<void> {
-  if (ns.getServerMoneyAvailable("home") < 1e7) {
+  if (ns.getServerMoneyAvailable("home") < 1e9) {
     return
   }
   const invitations = ns.singularity.checkFactionInvitations()
   const player = ns.getPlayer()
   const joinedFactions = player.factions
-  for (const faction in locationFactions) {
-    const city = locationFactions[faction as keyof typeof locationFactions]
-    const enemies = enemyFactions[faction as keyof typeof enemyFactions] as FactionName[] | null
+  for (const faction of getRecordKeys(locationFactions)) {
+    const city = locationFactions[faction]
+    const enemies = enemyFactions[faction] as FactionName[] | null
     if ((!invitations.includes(faction) && !joinedFactions.includes(faction)) && shouldJoinFaction(ns, faction) && !joinedFactions.some(f => enemies?.includes(f as FactionName))) {
       ns.print(`Traveling to ${city} to join faction ${faction}...`)
       ns.singularity.travelToCity(city)
@@ -131,9 +133,9 @@ async function applyToCompanyFactions(ns: NS): Promise<void> {
   const invitations = ns.singularity.checkFactionInvitations()
   const player = ns.getPlayer()
   const joinedFactions = player.factions
-  for (const faction in companyFactionCompanies) {
-    const company = companyFactionCompanies[faction as keyof typeof companyFactionCompanies]
-    if (!invitations.includes(faction) && !joinedFactions.includes(faction) && shouldJoinFaction(ns, faction) && player.jobs[company as CompanyName] == null) {
+  for (const faction of getRecordKeys(companyFactionCompanies)) {
+    const company = companyFactionCompanies[faction]
+    if (!invitations.includes(faction) && !joinedFactions.includes(faction) && shouldJoinFaction(ns, faction) && player.jobs[company] == null) {
       const jobNames = ns.singularity.getCompanyPositions(company)
       const jobs = jobNames
         .map(j => ns.singularity.getCompanyPositionInfo(company, j))
@@ -147,7 +149,10 @@ async function applyToCompanyFactions(ns: NS): Promise<void> {
   }
 }
 
-export function hasRemainingAugmentations(ns: NS, faction: string): boolean {
+export function hasRemainingAugmentations(ns: NS, faction: FactionName | `${FactionName}` | ""): boolean {
+  if (faction === "") {
+    return false
+  }
   const augmentations = ns.singularity.getAugmentationsFromFaction(faction)
   const ownedAugmentations = ns.singularity.getOwnedAugmentations(true)
   const unownedAugmentations = augmentations
@@ -158,18 +163,18 @@ export function hasRemainingAugmentations(ns: NS, faction: string): boolean {
     // Filter out augmentations that have unowned prerequisites that we dont have, and that no other faction we are in has either, and that the faction itself doesnt have either, as we wont be able to get those for a long time if we join this faction now
     .filter(a => !augmentationHasUnownedPrerequisites(ns, a, faction))
     // Filter out augmentations that we already have the rep for
-    .filter(a => ns.singularity.getAugmentationRepReq(a) > ns.singularity.getFactionRep(faction) && ns.singularity.getFactionFavor(faction) < ns.getBitNodeMultipliers().RepToDonateToFaction * 150)
+    .filter(a => ns.singularity.getAugmentationRepReq(a) > ns.singularity.getFactionRep(faction) && ns.singularity.getFactionFavor(faction) < ns.getBitNodeMultipliers().FavorToDonateToFaction * 150)
   return unownedAugmentations.length > 0
 }
 
-function otherJoinedFactionHasAugmentation(ns: NS, augmentation: string, faction: string): boolean {
+function otherJoinedFactionHasAugmentation(ns: NS, augmentation: string, faction: FactionName | `${FactionName}`): boolean {
   const factions = ns.singularity.getAugmentationFactions(augmentation)
   const player = ns.getPlayer()
   return factions.some(f => f !== faction && (player.factions.includes(f) || hackingFactions.includes(f as FactionName)))
 }
 
 // Returns true if the augmentation has prerequisites that we dont have, and that no other faction we are in has either, and that the passed faction itself doesnt have either
-function augmentationHasUnownedPrerequisites(ns: NS, augmentation: string, faction: string): boolean {
+function augmentationHasUnownedPrerequisites(ns: NS, augmentation: string, faction: FactionName | `${FactionName}`): boolean {
   const prerequisites = ns.singularity.getAugmentationPrereq(augmentation)
   const ownedAugmentations = ns.singularity.getOwnedAugmentations(true)
   const player = ns.getPlayer()
@@ -183,14 +188,14 @@ function augmentationHasUnownedPrerequisites(ns: NS, augmentation: string, facti
   )
 }
 
-function factionHas150Favor(ns: NS, faction: string): boolean {
+function factionHas150Favor(ns: NS, faction: FactionName | `${FactionName}`): boolean {
   const favor = ns.singularity.getFactionFavor(faction)
   const futureFavor = ns.singularity.getFactionFavorGain(faction)
-  return favor + futureFavor >= ns.getBitNodeMultipliers().RepToDonateToFaction * 150
+  return favor + futureFavor >= ns.getBitNodeMultipliers().FavorToDonateToFaction * 150
 }
 
-export function shouldJoinFaction(ns: NS, faction: string): boolean {
-  if (faction === "CyberSec" && !factionHas150Favor(ns, "CyberSec")) {
+export function shouldJoinFaction(ns: NS, faction: FactionName | `${FactionName}`): boolean {
+  if (faction === "CyberSec" && !factionHas150Favor(ns, FactionName.CyberSec)) {
     return true
   }
   // Dont join factions that only have augmentations that we already have, or that other factions we are in have, as we can get those from those factions instead if we want them

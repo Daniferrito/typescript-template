@@ -1,8 +1,8 @@
 /* eslint-disable no-case-declarations */
 import { BladeburnerCurAction, CompanyWorkTask, CreateProgramWorkTask, CrimeTask, FactionWorkTask, GangGenInfo, GraftingTask, NS, Player, SleeveBladeburnerTask, SleeveInfiltrateTask, SleevePerson, SleeveRecoveryTask, SleeveSupportTask, SleeveSynchroTask, SleeveTask, StudyTask, Task } from "@ns";
 import { ALL_FACTIONS, companyFactions, factionCompanies, hasRemainingAugmentations, shouldJoinFaction } from "./utils/factionHandling";
-import { BladeburnerActionTypeForSleeve, BladeburnerBlackOpName, BladeburnerContractName, BladeburnerActionName, BladeburnerOperationName, BladeburnerGeneralActionName, CityName, CompanyName, CrimeType, GymLocationName, GymType, LocationName, UniversityClassType, UniversityLocationName } from "./utils/enums";
-import { neverReached } from "./utils/utils";
+import { BladeburnerActionTypeForSleeve, BladeburnerBlackOpName, BladeburnerContractName, BladeburnerOperationName, BladeburnerGeneralActionName, CityName, CompanyName, CrimeType, GymLocationName, GymType, LocationName, UniversityClassType, UniversityLocationName, FactionName } from "./utils/enums";
+import { getRecordKeys, neverReached } from "./utils/utils";
 
 let hasNeuroReceptorManager = false
 let hasBladeSimulacrum = false
@@ -166,13 +166,57 @@ function decideTask<T extends MyPerson>(ns: NS, person: T, sleeveNumber = -1): P
             classType: GymType[statName],
             location: gym,
             cyclesWorked: 0
-          })
+          } as PersonTask<T>)
         }
       }
     }
   }
 
   if (isPlayer && ns.bladeburner.inBladeburner()) {
+    //Get to 30 seconds of training for each stat, to have a baseline for bladeburner tasks, which are more efficient when we have higher stats
+    const thirtySecondsInTicks = 30 * 1000 / 200 // 200ms is the tick duration for training tasks
+    const physicalStats = ["strength", "defense", "dexterity", "agility"] as const
+    for (const statName of physicalStats) {
+      const exp = person.exp[statName]
+      // Study in whatever university we have access to
+      if (ns.getServerMoneyAvailable("home") >= 10_000_000) {
+        person.city = CityName.Sector12
+      }
+      const gym = gymsByCity[person.city as keyof typeof gymsByCity]
+      if (gym) {
+        const expGain = ns.formulas.work.gymGains(person, GymType[statName], gym)[physicalStatToWorkStatParam(statName)]
+        const expFor30Seconds = expGain * thirtySecondsInTicks
+        if (exp < expFor30Seconds) {
+          tasks.push({
+            type: "CLASS",
+            classType: GymType[statName],
+            location: gym,
+            cyclesWorked: 0
+          } as PersonTask<T>)
+        }
+      }
+    }
+    const mentalStats = ["hacking", "charisma"] as const
+    for (const statName of mentalStats) {
+      const exp = person.exp[statName]
+      // Study in whatever university we have access to
+      if (ns.getServerMoneyAvailable("home") >= 10_000_000) {
+        person.city = CityName.Volhaven
+      }
+      const location = universitiesByCity[person.city as keyof typeof universitiesByCity]
+      if (location) {
+        const expGain = ns.formulas.work.universityGains(person, mentalStatToUniversityType(statName), location)[mentalStatToWorkStatParam(statName)]
+        const expFor30Seconds = expGain * thirtySecondsInTicks
+        if (exp < expFor30Seconds) {
+          tasks.push({
+            type: "CLASS",
+            classType: mentalStatToUniversityType(statName),
+            location,
+            cyclesWorked: 0
+          } as PersonTask<T>)
+        }
+      }
+    }
     const [currStamina, maxStamina] = ns.bladeburner.getStamina()
     if (ns.bladeburner.getCityChaos(ns.bladeburner.getCity()) > 3) {
       tasks.push({
@@ -186,8 +230,8 @@ function decideTask<T extends MyPerson>(ns: NS, person: T, sleeveNumber = -1): P
       const types = isPlayer ? ["General", "Contracts", "Operations", "Black Operations"] as const : ["General", "Contracts"] as const
       for (const type of types) {
         const names = type === "General" ? [BladeburnerGeneralActionName.FieldAnalysis] :
-          type === "Contracts" ? ns.bladeburner.getContractNames() :
-            type === "Operations" ? ns.bladeburner.getOperationNames() :
+          type === "Contracts" ? [BladeburnerContractName.Tracking] :
+            type === "Operations" ? [BladeburnerOperationName.Investigation, BladeburnerOperationName.Undercover, BladeburnerOperationName.Assassination] :
               type === "Black Operations" ? ns.bladeburner.getBlackOpNames() :
                 neverReached(type)
         for (const name of names) {
@@ -198,20 +242,31 @@ function decideTask<T extends MyPerson>(ns: NS, person: T, sleeveNumber = -1): P
           }
           const successChances = ns.bladeburner.getActionEstimatedSuccessChance(type, name)
           const remaining = ns.bladeburner.getActionCountRemaining(type, name)
-          const result = ns.bladeburner.getActionRepGain(type, name, 1)
+          const result = ns.bladeburner.getActionRankGain(type, name, 1)
           const time = ns.bladeburner.getActionTime(type, name)
           if (successChances[0] < 0.4 || successChances[1] < 0.7
-            || (type === "Black Operations" && ns.bladeburner.getBlackOpRank(name as BladeburnerBlackOpName) > ns.bladeburner.getRank())
-            || ([BladeburnerOperationName.Raid, BladeburnerOperationName.Sting, BladeburnerOperationName.StealthRetirement] as BladeburnerActionName[]).includes(name)
+            || (type === "Black Operations" && (
+              ns.bladeburner.getBlackOpRank(name as BladeburnerBlackOpName) > ns.bladeburner.getRank() || successChances[0] < 0.7
+            ))
           ) {
             continue
           }
-          outputs.push({
-            type,
-            name,
-            result: type === "Black Operations" ? Number.MAX_SAFE_INTEGER : result * successChances[0] / time,
-            remaining,
-          })
+          if (name === BladeburnerOperationName.Assassination && ns.bladeburner.getCityChaos(ns.bladeburner.getCity()) > 0) {
+            // For assasinations, make sure to get chaos to 0 first
+            outputs.push({
+              type: "General",
+              name: BladeburnerGeneralActionName.Diplomacy,
+              result: result * successChances[0] / time,
+              remaining,
+            })
+          } else {
+            outputs.push({
+              type,
+              name,
+              result: type === "Black Operations" ? Number.MAX_SAFE_INTEGER : result * successChances[0] / time,
+              remaining,
+            })
+          }
         }
       }
 
@@ -249,7 +304,7 @@ function decideTask<T extends MyPerson>(ns: NS, person: T, sleeveNumber = -1): P
         type: "INFILTRATE",
       } as PersonTask<T>)
     }
-    if (ns.bladeburner.getCityChaos(ns.bladeburner.getCity()) > 0.5) {
+    if (ns.bladeburner.getCityChaos(ns.bladeburner.getCity()) > 0) {
       tasks.push({
         type: "BLADEBURNER",
         actionName: "Diplomacy",
@@ -264,15 +319,10 @@ function decideTask<T extends MyPerson>(ns: NS, person: T, sleeveNumber = -1): P
         actionName: "Hyperbolic Regeneration Chamber",
       } as SleeveExtendedBladeburnerTask as PersonTask<T>)
     }
-    tasks.push({
-      type: "BLADEBURNER",
-      actionType: "General",
-      actionName: "Hyperbolic Regeneration Chamber",
-    } as SleeveExtendedBladeburnerTask as PersonTask<T>)
   }
 
 
-  const factions = player.factions.reverse().filter(f => f !== gang?.faction)
+  const factions = player.factions.reverse().filter(f => f !== gang?.faction) as FactionName[]
   // Work for non-company factions that have augmentations we dont have yet and that we should join
   const nonCompanyFactions = factions
     // Dont work for company factions yet, we want to unlock them all first
@@ -285,22 +335,22 @@ function decideTask<T extends MyPerson>(ns: NS, person: T, sleeveNumber = -1): P
     }
   }
   // Work for a company that we are in and that has a faction with augmentations we dont have yet
-  const companies = Object.keys(player.jobs)
+  const companies = getRecordKeys(player.jobs)
     .filter(company =>
-      !player.factions.includes(factionCompanies[company as CompanyName] ?? "") &&
+      !player.factions.includes((factionCompanies[company as CompanyName] ?? "") as FactionName) &&
       hasRemainingAugmentations(ns, factionCompanies[company as CompanyName] ?? "") &&
-      !ns.singularity.checkFactionInvitations().includes(factionCompanies[company as CompanyName] ?? "")
+      !ns.singularity.checkFactionInvitations().includes((factionCompanies[company as CompanyName] ?? "") as FactionName)
     )
   for (const company of companies) {
     tasks.push({
       type: "COMPANY",
       companyName: company as CompanyName,
       cyclesWorked: 0
-    })
+    } as PersonTask<T>)
   }
   // Work for a faction that we are in and that has augmentations we dont have yet
   const playerCompanyFactions = player.factions.reverse()
-    .filter(f => hasRemainingAugmentations(ns, f) && shouldJoinFaction(ns, f))
+    .filter(f => hasRemainingAugmentations(ns, f) && shouldJoinFaction(ns, f)) as FactionName[]
   for (const faction of playerCompanyFactions) {
     const task = decideFactionWork(ns, person, faction)
     if (task) {
@@ -308,7 +358,7 @@ function decideTask<T extends MyPerson>(ns: NS, person: T, sleeveNumber = -1): P
     }
   }
 
-  const factionsWith150Favor = ALL_FACTIONS.filter(f => ns.singularity.getFactionFavor(f) >= ns.getBitNodeMultipliers().RepToDonateToFaction * 150)
+  const factionsWith150Favor = ALL_FACTIONS.filter(f => ns.singularity.getFactionFavor(f) >= ns.getBitNodeMultipliers().FavorToDonateToFaction * 150)
   if (factionsWith150Favor.length === 0) {
     const factionWithGreatestFavor = factions.map(f => ({ faction: f, favor: ns.singularity.getFactionFavor(f) })).sort((a, b) => b.favor - a.favor)[0]?.faction
     if (factionWithGreatestFavor) {
@@ -334,14 +384,14 @@ function decideTask<T extends MyPerson>(ns: NS, person: T, sleeveNumber = -1): P
             classType: UniversityClassType.algorithms,
             location,
             cyclesWorked: 0
-          })
+          } as PersonTask<T>)
         } else {
           tasks.push({
             type: "CLASS",
             classType: UniversityClassType.computerScience,
             location,
             cyclesWorked: 0
-          })
+          } as PersonTask<T>)
         }
       }
     }
@@ -359,7 +409,7 @@ function decideTask<T extends MyPerson>(ns: NS, person: T, sleeveNumber = -1): P
             classType: GymType[statName],
             location: gym,
             cyclesWorked: 0
-          })
+          } as PersonTask<T>)
         }
       }
     }
@@ -503,7 +553,7 @@ function tasksAreEqual(task1: Task | SleeveTask | null, task2: PlayerTask | MySl
   }
 }
 
-function decideFactionWork(ns: NS, person: MyPerson, faction: string): FactionWorkTask | null {
+function decideFactionWork(ns: NS, person: MyPerson, faction: FactionName): FactionWorkTask | null {
   const factionWorkTypes = ns.singularity.getFactionWorkTypes(faction)
     .map(wt => ({ workType: wt, repGain: ns.formulas.work.factionGains(person, wt, 1).reputation })).sort((a, b) => b.repGain - a.repGain)
   if (factionWorkTypes.length === 0) {
@@ -513,8 +563,8 @@ function decideFactionWork(ns: NS, person: MyPerson, faction: string): FactionWo
     type: "FACTION",
     factionName: faction,
     factionWorkType: factionWorkTypes[0].workType,
-    cyclesWorked: 0
-  }
+    cyclesWorked: 0,
+  } as FactionWorkTask
 }
 
 const universitiesByCity = {
@@ -624,5 +674,51 @@ function bestCrime(ns: NS, person: MyPerson, objective: "money" | "karma" | "kil
     type: "CRIME",
     crimeType: best,
     cyclesWorked: 0
+  } as CrimeTask
+}
+
+function physicalStatToGymType(stat: "strength" | "defense" | "dexterity" | "agility"): GymType {
+  switch (stat) {
+    case "strength":
+      return GymType.strength
+    case "defense":
+      return GymType.defense
+    case "dexterity":
+      return GymType.dexterity
+    case "agility":
+      return GymType.agility
+  }
+}
+
+function physicalStatToWorkStatParam(stat: "strength" | "defense" | "dexterity" | "agility"): "strExp" | "defExp" | "dexExp" | "agiExp" {
+  switch (stat) {
+    case "strength":
+      return "strExp"
+    case "defense":
+      return "defExp"
+    case "dexterity":
+      return "dexExp"
+    case "agility":
+      return "agiExp"
+  }
+}
+
+function mentalStatToUniversityType(statName: string): UniversityClassType {
+  switch (statName) {
+    case "hacking":
+      return UniversityClassType.algorithms
+    case "charisma":
+      return UniversityClassType.leadership
+    default:
+      throw new Error(`Unknown mental stat ${statName}`)
+  }
+}
+
+function mentalStatToWorkStatParam(statName: "hacking" | "charisma"): "hackExp" | "chaExp" {
+  switch (statName) {
+    case "hacking":
+      return "hackExp"
+    case "charisma":
+      return "chaExp"
   }
 }

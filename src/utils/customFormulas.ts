@@ -218,6 +218,6 @@ export function getCoreBonus(cores = 1): number {
   return 1 + (cores - 1) / 16;
 }
 
-function calculateIntelligenceBonus(intelligence: number, weight = 1): number {
+export function calculateIntelligenceBonus(intelligence: number, weight = 1): number {
   return 1 + (weight * Math.pow(intelligence, 0.8)) / 600;
 }

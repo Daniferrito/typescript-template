@@ -9,15 +9,22 @@ export async function main(ns: NS): Promise<void> {
   ns.clearLog()
 
   for (; ;) {
-    const [numOfBuyableAugs, numOfNFGs] = countPurchaseableAugs(ns)
-    const canBuyRedPill = ns.singularity.getFactionFavor(FactionName.Daedalus) + ns.singularity.getFactionFavorGain(FactionName.Daedalus) >= ns.getBitNodeMultipliers().RepToDonateToFaction * 150 && ns.getServerMoneyAvailable("home") >= ns.formulas.reputation.donationForRep(ns.getBitNodeMultipliers().RepToDonateToFaction * 150, ns.getPlayer())
+    // const [numOfBuyableAugs, numOfNFGs] = countPurchaseableAugs(ns)
+    const buyableAugmentations = getMaxBuyableAugmentations(ns)
+    const numOfBuyableAugs = buyableAugmentations.length
+    const numOfNFGs = buyableAugmentations.filter(a => a === "NeuroFlux Governor").length
+    const canBuyRedPill = ns.singularity.getFactionFavor(FactionName.Daedalus) + ns.singularity.getFactionFavorGain(FactionName.Daedalus) >= ns.getBitNodeMultipliers().FavorToDonateToFaction * 150 && ns.getServerMoneyAvailable("home") >= ns.formulas.reputation.donationForRep(ns.getBitNodeMultipliers().FavorToDonateToFaction * 150, ns.getPlayer())
     const numOfNonNFGAugs = numOfBuyableAugs - numOfNFGs
     ns.print(`You can currently buy ${numOfBuyableAugs} augmentations (${numOfNonNFGAugs} non-NFGs and ${numOfNFGs} NFGs) with your current money and faction reputations (including donations)`)
-    if (numOfNonNFGAugs >= 5 || canBuyRedPill || numOfNFGs >= 10) {
-      await buyAllAugmentations(ns)
+    ns.print(`Buyable augmentations: ${buyableAugmentations.join(", ")}`)
+    if (canBuyRedPill || numOfNFGs + numOfNonNFGAugs * 2 >= 10) {
+      // await buyAllAugmentations(ns)
+      await buySpecificAugmentations(ns, buyableAugmentations)
+      const currHacking = ns.getPlayer().skills.hacking
+      ns.write("previous_hacking.txt", currHacking.toString(), "w")
       ns.singularity.installAugmentations("start-script.js")
     }
-    await ns.sleep(60 * 1000)
+    await ns.sleep(5 * 1000)
   }
 }
 
@@ -26,7 +33,7 @@ async function buyAllAugmentations(ns: NS) {
   const baseBuyableAugmentations = getBuyableAugmentations(ns)
   const factions = ns.singularity.checkFactionInvitations().concat(ns.getPlayer().factions)
   for (const faction of factions) {
-    if (ns.singularity.getFactionFavor(faction) < ns.getBitNodeMultipliers().RepToDonateToFaction * 150) {
+    if (ns.singularity.getFactionFavor(faction) < ns.getBitNodeMultipliers().FavorToDonateToFaction * 150) {
       continue
     }
     const augmentations = ns.singularity.getAugmentationsFromFaction(faction)
@@ -49,7 +56,7 @@ async function buyAllAugmentations(ns: NS) {
   const buyableAugmentations = sortAugmentations(ns, getBuyableAugmentations(ns))
   for (const aug of buyableAugmentations) {
     const sources = getAugmentationSource(ns, aug)
-    ns.print(`${aug} ${ns.formatNumber(ns.singularity.getAugmentationPrice(aug), 0)}: ${sources.map(s => `${s.faction} (${s.reason})`).join(", ")}`)
+    ns.print(`${aug} ${ns.format.number(ns.singularity.getAugmentationPrice(aug), 0)}: ${sources.map(s => `${s.faction} (${s.reason})`).join(", ")}`)
     const nonFavorSource = sources.find(s => s.reason !== "150+ favor")
     if (sources.every(s => s.reason === "150+ favor") && sources[0] != null) {
       const reqRepGain = ns.singularity.getAugmentationRepReq(aug) - ns.singularity.getFactionRep(sources[0].faction)
@@ -64,12 +71,15 @@ async function buyAllAugmentations(ns: NS) {
   const gang = ns.gang.inGang() ? ns.gang.getGangInformation() : null
   const higherRepFactionWith150Favor = factions
     .filter(f => f !== gang?.faction && f !== "Bladeburners")
-    .filter(f => ns.singularity.getFactionFavor(f) >= ns.getBitNodeMultipliers().RepToDonateToFaction * 150)
+    .filter(f => ns.singularity.getFactionFavor(f) >= ns.getBitNodeMultipliers().FavorToDonateToFaction * 150)
     .sort((a, b) => ns.singularity.getFactionRep(b) - ns.singularity.getFactionRep(a))[0]
   const higherRepFaction = factions
     .filter(f => f !== gang?.faction && f !== "Bladeburners")
     .filter(f => ns.singularity.getFactionRep(f) > 0)
     .sort((a, b) => ns.singularity.getFactionRep(b) - ns.singularity.getFactionRep(a))[0]
+  if (!higherRepFaction) {
+    return
+  }
   for (; ;) {
     // Buy NFG as much as we can, donating to the faction with greatest current rep if needed
     const nfg = "NeuroFlux Governor"
@@ -134,7 +144,7 @@ function countPurchaseableAugs(ns: NS): [number, number] {
   const gang = ns.gang.inGang() ? ns.gang.getGangInformation() : null
   const higherRepFactionWith150Favor = sources
     .filter(s => s.faction !== gang?.faction && s.faction !== "Bladeburners")
-    .filter(s => s.favor >= ns.getBitNodeMultipliers().RepToDonateToFaction * 150)
+    .filter(s => s.favor >= ns.getBitNodeMultipliers().FavorToDonateToFaction * 150)
     .sort((a, b) => b.rep - a.rep)[0]
   const higherRepFaction = sources
     .filter(s => s.faction !== gang?.faction && s.faction !== "Bladeburners")
@@ -166,4 +176,112 @@ function countPurchaseableAugs(ns: NS): [number, number] {
   }
 
   return [count, nfgBought]
+}
+
+function getMaxBuyableAugmentations(ns: NS): string[] {
+  // Decides the maximum number of augmentations we can buy with the current money and faction reputations, without actually buying them, by simulating the buying process and keeping track of spent money and used reputation
+
+  const augList = []
+  const buyableAugmentations = getBuyableAugmentations(ns)
+    .sort((a, b) => ns.singularity.getAugmentationPrice(a) - ns.singularity.getAugmentationPrice(b))
+  // Add augmentations one by one, starting with the cheapest, and check if we can afford to buy them with the current money and faction reputations (including donations), by keeping track of spent money and used reputation
+  // If not, skip that one and move to the next one.
+  // Use canBuyAugmentationList to check if we can buy the current list of augmentations
+  for (const aug of buyableAugmentations) {
+    const newAugList = [aug, ...augList]
+    if (canBuyAugmentationList(ns, newAugList)) {
+      augList.unshift(aug)
+    }
+  }
+  // Add as many NFG as we can with the remaining money, donating if needed
+  for (; ;) {
+    const newAugList = [...augList, "NeuroFlux Governor"]
+    if (!canBuyAugmentationList(ns, newAugList)) {
+      break
+    }
+    augList.push("NeuroFlux Governor")
+  }
+  return augList
+}
+
+function canBuyAugmentationList(ns: NS, augmentations: string[]): boolean {
+  // Simulates buying the given list of augmentations in order and checks if we can afford to buy all of them with the current money and faction reputations, by keeping track of spent money and used reputation
+  const player = ns.getPlayer()
+  let money = ns.getServerMoneyAvailable("home")
+  const sources = player.factions.concat(ns.singularity.checkFactionInvitations()).map(f => ({
+    faction: f,
+    favor: ns.singularity.getFactionFavor(f),
+    rep: ns.singularity.getFactionRep(f),
+    donatedMoney: 0,
+  }))
+  let priceMultiplier = 1
+  const multiplierIncrement = 1.9 * 0.93 // SF 11 lvl 3
+
+  for (const aug of augmentations) {
+    const price = ns.singularity.getAugmentationPrice(aug)
+      * priceMultiplier
+    priceMultiplier *= multiplierIncrement
+    if (money < price) {
+      return false
+    }
+    const augSources = getAugmentationSource(ns, aug)
+    if (augSources.every(s => s.reason === "150+ favor")) {
+      const faction = sources.filter(s => s.faction === augSources[0]?.faction).sort((a, b) => b.rep - a.rep)[0]
+      if (faction == null) {
+        return false
+      }
+      const reqRepGain = ns.singularity.getAugmentationRepReq(aug) - faction.rep
+      if (reqRepGain > 0) {
+        const donation = ns.formulas.reputation.donationForRep(reqRepGain, ns.getPlayer())
+        if (money < donation) {
+          return false
+        }
+        faction.donatedMoney += donation
+        money -= donation
+        faction.rep += reqRepGain
+      }
+    }
+    money -= price
+  }
+  return true
+}
+
+async function buySpecificAugmentations(ns: NS, augmentations: string[]) {
+  ns.write("augs-to-buy.txt", `Trying to buy the following augmentations in order: ${augmentations.join(", ")}\n`, "a")
+  // Buys the given list of augmentations in order, by keeping track of spent money and used reputation to make sure we buy them in the correct order
+  const sources = ns.getPlayer().factions.concat(ns.singularity.checkFactionInvitations()).map(f => ({
+    faction: f,
+    favor: ns.singularity.getFactionFavor(f),
+    rep: ns.singularity.getFactionRep(f),
+    donatedMoney: 0,
+  }))
+  for (const aug of augmentations) {
+    const augSources = getAugmentationSource(ns, aug)
+    if (augSources.every(s => s.reason === "150+ favor")) {
+      const faction = sources.filter(s => s.faction === augSources[0]?.faction).sort((a, b) => b.rep - a.rep)[0]
+      if (faction == null) {
+        ns.write("augs-to-buy.txt", `Could not find faction for augmentation ${aug}\n`, "a")
+        continue
+      }
+      ns.singularity.joinFaction(faction.faction)
+      const reqRepGain = ns.singularity.getAugmentationRepReq(aug) - faction.rep
+      if (reqRepGain > 0) {
+        ns.singularity.donateToFaction(faction.faction, ns.formulas.reputation.donationForRep(reqRepGain, ns.getPlayer()))
+        ns.write("augs-to-buy.txt", `Donated ${ns.formulas.reputation.donationForRep(reqRepGain, ns.getPlayer())} to ${faction.faction} for augmentation ${aug}\n`, "a")
+        await ns.sleep(200)
+        faction.donatedMoney += ns.formulas.reputation.donationForRep(reqRepGain, ns.getPlayer())
+        faction.rep += reqRepGain
+      }
+      ns.singularity.purchaseAugmentation(faction.faction, aug)
+      ns.write("augs-to-buy.txt", `Bought ${aug} from ${faction.faction}\n`, "a")
+      await ns.sleep(200)
+    } else {
+      const nonFavorSource = augSources.find(s => s.reason !== "150+ favor")
+      if (nonFavorSource) {
+        ns.singularity.purchaseAugmentation(nonFavorSource.faction, aug)
+        ns.write("augs-to-buy.txt", `Bought ${aug} from ${nonFavorSource.faction}\n`, "a")
+        await ns.sleep(200)
+      }
+    }
+  }
 }

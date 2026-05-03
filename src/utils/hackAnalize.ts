@@ -1,4 +1,4 @@
-import { NS } from "@ns"
+import { NS, Player, Server } from "@ns"
 import { waitTimeMs } from "./constants"
 import { calculatePercentMoneyHacked, numCycleForGrowthCorrected, times } from "./customFormulas"
 
@@ -49,12 +49,12 @@ const emptyHackAnalyzeResult: HackAnalyzeResult = {
 }
 
 // The main purpose of this function is to optimize targetMoneyToHackPercentage to get the best efficiency
-export function hackAnalyze(ns: NS, hostname: string): HackAnalyzeResult {
-  let bestResult = calcEfficiency(ns, hostname, 1)
+export function hackAnalyze(ns: NS, hostname: string, player?: Player): HackAnalyzeResult {
+  let bestResult = calcEfficiency(ns, hostname, 1, player)
 
   // Try different targetMoneyToHackPercentage values to see if we can get better efficiency
   for (let numHackThreads = 1; numHackThreads <= 500; numHackThreads += 1) {
-    const result = calcEfficiency(ns, hostname, numHackThreads)
+    const result = calcEfficiency(ns, hostname, numHackThreads, player)
     if (result.efficiency > bestResult.efficiency) {
       bestResult = result
     }
@@ -67,17 +67,17 @@ export function hackAnalyze(ns: NS, hostname: string): HackAnalyzeResult {
   return bestResult
 }
 
-export function calcEfficiency(ns: NS, serverName: string, hackThreads: number): HackAnalyzeResult {
+export function calcEfficiency(ns: NS, serverName: string, hackThreads: number, p?: Player): HackAnalyzeResult {
   // const hasFormulas = ns.fileExists("Formulas.exe", "home")
 
-  const server = ns.getServer(serverName)
-  const player = ns.getPlayer()
+  const server = ns.getServer(serverName) as Server
+  const player = p || ns.getPlayer()
 
   const maxMoney = server.moneyMax ?? 0
   const currentMoney = server.moneyAvailable ?? 0
   const serverGrowth = server.serverGrowth ?? 0
 
-  if (serverGrowth <= 10 || maxMoney < 1 || (server.requiredHackingSkill ?? Infinity) > player.skills.hacking || !server.hasAdminRights) {
+  if (serverGrowth <= 10 || maxMoney < 1 || (server.requiredHackingSkill ?? Infinity) > player.skills.hacking) {
     return { ...emptyHackAnalyzeResult, hostname: serverName } // ignore home, filter servers with low cash/low growth/too high hacking reqs
   }
 
